@@ -33,7 +33,7 @@
   <header>
     <div>
       <h1>N O T E B O O K</h1>
-      <div class="sub">The only thing in the facility that cannot be edited against you.</div>
+      <div class="sub">Freehand only. The eraser removes whole strokes, not pixels.</div>
     </div>
     <div class="bar">
       <button id="pen" class="on">Pen</button>
@@ -63,8 +63,10 @@ const $ = id => document.getElementById(id);
 // A page is just a list of strokes; a stroke is a width, a mode and a list of
 // points. Storing strokes rather than pixels gives undo for free, keeps saves
 // tiny, and lets the drawing survive a window resize.
-let pages = [[]], page = 0;
+let pages = [[]], page = 0, undos = [[]];
 let tool = "pen", size = 2.2, drawing = false, cur = null;
+let erasing = false, hover = null;
+const eraserR = () => 6 + size * 3.2;      // the width picker also sizes the eraser
 
 const SIZES = [1.4, 2.2, 3.6, 6.0];
 $("sizes").innerHTML = SIZES.map((s,i) =>
@@ -99,16 +101,16 @@ function paper(){
 }
 
 function drawStroke(s){
+  ctx.globalAlpha = s.doomed ? 0.22 : 1;          // marked for erase: show it going
   if(s.pts.length < 2) {
-    ctx.fillStyle = s.mode === "erase" ? getComputedStyle(document.documentElement).getPropertyValue("--paper").trim() : "#f0d9a8";
+    ctx.fillStyle = "#f0d9a8";
     ctx.beginPath(); ctx.arc(s.pts[0].x, s.pts[0].y, s.w/2, 0, Math.PI*2); ctx.fill();
+    ctx.globalAlpha = 1;
     return;
   }
   ctx.lineCap = "round"; ctx.lineJoin = "round";
-  ctx.strokeStyle = s.mode === "erase"
-    ? getComputedStyle(document.documentElement).getPropertyValue("--paper").trim()
-    : "#f0d9a8";
-  ctx.lineWidth = s.mode === "erase" ? s.w * 5 : s.w;
+  ctx.strokeStyle = "#f0d9a8";
+  ctx.lineWidth = s.w;
   ctx.beginPath();
   ctx.moveTo(s.pts[0].x, s.pts[0].y);
   for(let i = 1; i < s.pts.length - 1; i++){
@@ -118,11 +120,32 @@ function drawStroke(s){
   const last = s.pts[s.pts.length-1];
   ctx.lineTo(last.x, last.y);
   ctx.stroke();
+  ctx.globalAlpha = 1;
+}
+
+// distance from a point to a line segment -- the whole of eraser hit-testing
+function distToSeg(p, a, b){
+  const vx = b.x-a.x, vy = b.y-a.y;
+  const len2 = vx*vx + vy*vy;
+  let t = len2 ? ((p.x-a.x)*vx + (p.y-a.y)*vy) / len2 : 0;
+  t = Math.max(0, Math.min(1, t));
+  return Math.hypot(p.x - (a.x + t*vx), p.y - (a.y + t*vy));
+}
+function strokeHit(s, p, r){
+  const reach = r + s.w/2;
+  if(s.pts.length === 1) return Math.hypot(p.x-s.pts[0].x, p.y-s.pts[0].y) <= reach;
+  for(let i = 0; i < s.pts.length-1; i++)
+    if(distToSeg(p, s.pts[i], s.pts[i+1]) <= reach) return true;
+  return false;
 }
 
 function redraw(){
   paper();
   for(const s of pages[page]) drawStroke(s);
+  if(tool === "eraser" && hover){
+    ctx.strokeStyle = "rgba(255,181,69,.55)"; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.arc(hover.x, hover.y, eraserR(), 0, Math.PI*2); ctx.stroke();
+  }
   $("pno").textContent = page + 1;
   $("ptot").textContent = pages.length;
   $("strokes").textContent = pages[page].length;
@@ -132,21 +155,55 @@ function pt(e){
   const r = cv.getBoundingClientRect();
   return { x: e.clientX - r.left, y: e.clientY - r.top };
 }
+function markAt(p){
+  const r = eraserR();
+  let any = false;
+  for(const s of pages[page])
+    if(!s.doomed && strokeHit(s, p, r)){ s.doomed = true; any = true; }
+  return any;
+}
+
 cv.addEventListener("pointerdown", e => {
   cv.setPointerCapture(e.pointerId);
+  const p = pt(e);
+  if(tool === "eraser"){
+    erasing = true; markAt(p); redraw(); return;
+  }
   drawing = true;
-  cur = { w: size, mode: tool === "eraser" ? "erase" : "pen", pts: [pt(e)] };
+  cur = { w: size, pts: [p] };
   pages[page].push(cur);
   redraw();
 });
+
 cv.addEventListener("pointermove", e => {
-  if(!drawing) return;
-  const p = pt(e), last = cur.pts[cur.pts.length-1];
+  hover = pt(e);
+  if(erasing){ markAt(hover); redraw(); return; }
+  if(!drawing){ if(tool === "eraser") redraw(); return; }
+  const p = hover, last = cur.pts[cur.pts.length-1];
   if(Math.hypot(p.x-last.x, p.y-last.y) < 1.1) return;    // thin out jitter
   cur.pts.push(p);
   redraw();
 });
-addEventListener("pointerup", () => { if(drawing){ drawing = false; cur = null; save(); } });
+cv.addEventListener("pointerleave", () => { hover = null; if(!erasing && !drawing) redraw(); });
+
+addEventListener("pointerup", () => {
+  if(erasing){
+    // commit: whole strokes go, and remember where they were so undo restores order
+    const removed = [];
+    pages[page] = pages[page].filter((s, i) => {
+      if(s.doomed){ delete s.doomed; removed.push({i, s}); return false; }
+      return true;
+    });
+    if(removed.length) undos[page].push({type:"erase", removed});
+    erasing = false; redraw(); save();
+    return;
+  }
+  if(drawing){
+    drawing = false;
+    undos[page].push({type:"add"});
+    cur = null; save();
+  }
+});
 
 $("pen").addEventListener("click", () => setTool("pen"));
 $("eraser").addEventListener("click", () => setTool("eraser"));
@@ -155,16 +212,28 @@ function setTool(t){
   $("pen").classList.toggle("on", t === "pen");
   $("eraser").classList.toggle("on", t === "eraser");
 }
-$("undo").addEventListener("click", () => { pages[page].pop(); redraw(); save(); });
-$("clear").addEventListener("click", () => { pages[page] = []; redraw(); save(); });
+function undo(){
+  const op = undos[page].pop();
+  if(!op) return;
+  if(op.type === "add") pages[page].pop();
+  else if(op.type === "erase")
+    for(const {i, s} of op.removed) pages[page].splice(i, 0, s);   // back where it was
+  else if(op.type === "clear") pages[page] = op.strokes;
+  redraw(); save();
+}
+$("undo").addEventListener("click", undo);
+$("clear").addEventListener("click", () => {
+  undos[page].push({type:"clear", strokes: pages[page]});
+  pages[page] = []; redraw(); save();
+});
 $("prev").addEventListener("click", () => { if(page > 0){ page--; redraw(); } });
 $("next").addEventListener("click", () => {
   page++;
-  if(page >= pages.length) pages.push([]);
+  if(page >= pages.length){ pages.push([]); undos.push([]); }
   redraw(); save();
 });
 addEventListener("keydown", e => {
-  if((e.ctrlKey||e.metaKey) && e.key === "z"){ pages[page].pop(); redraw(); save(); e.preventDefault(); }
+  if((e.ctrlKey||e.metaKey) && e.key === "z"){ undo(); e.preventDefault(); }
   if(e.key === "e") setTool("eraser");
   if(e.key === "p") setTool("pen");
   if(e.key === "PageDown") $("next").click();
@@ -181,6 +250,7 @@ function load(){
   try{
     const raw = localStorage.getItem("parity.notebook");
     if(raw){ pages = JSON.parse(raw); if(!pages.length) pages = [[]]; }
+    undos = pages.map(() => []);
   }catch(err){ pages = [[]]; }
 }
 
