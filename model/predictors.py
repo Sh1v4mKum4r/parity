@@ -123,3 +123,49 @@ class VOMM:
         aggressively the Director is allowed to act."""
         d = self.predict(history, candidates)
         return max(d.values()) if d else 0.0
+
+
+class DwellModel:
+    """Learns how long a specific player lingers, and where.
+
+    Dwell is not a nuisance parameter -- it is one of the most individual things a
+    player does. Someone who copies an entire lookup table before moving behaves
+    nothing like someone who grabs one row and runs, and the difference is
+    learnable from their own play.
+
+    We model it as a hazard: given the player has already declined `k` consecutive
+    windows in this room, what is the probability they decline another? That gives
+    an expected remaining dwell, which is what an antagonist actually needs -- not
+    "where will they be next" but "how long do I have to get there".
+    """
+    name = "dwell"
+
+    def __init__(self, alpha: float = 1.0, max_k: int = 6):
+        self.alpha, self.max_k = alpha, max_k
+        self.stay = defaultdict(float)     # (room, k) -> times they stayed again
+        self.total = defaultdict(float)    # (room, k) -> times observed at that k
+
+    def observe(self, room, k, stayed):
+        key = (room, min(k, self.max_k))
+        self.total[key] += 1.0
+        if stayed:
+            self.stay[key] += 1.0
+
+    def hazard(self, room, k):
+        """P(declines another window | already declined k here)."""
+        key = (room, min(k, self.max_k))
+        tot = self.total.get(key, 0.0)
+        return (self.stay.get(key, 0.0) + self.alpha * 0.5) / (tot + self.alpha)
+
+    def expected_remaining(self, room, k, horizon: int = 6) -> float:
+        """Expected further windows the player stays put, from a learned hazard."""
+        exp, p = 0.0, 1.0
+        for i in range(horizon):
+            p *= self.hazard(room, k + i)
+            exp += p
+        return exp
+
+    def confidence(self, room, k) -> float:
+        key = (room, min(k, self.max_k))
+        n = self.total.get(key, 0.0)
+        return n / (n + 4.0)

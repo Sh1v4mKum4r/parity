@@ -44,13 +44,14 @@ class HabitualBot:
     name = "habitual"
 
     def __init__(self, fac, seed: int = 0, noise: float = 0.08, skew: bool = False,
-                 write_p: float = 0.18):
+                 write_p: float = 0.18, dwell_max: int = 0):
         self.fac, self.rng, self.noise = fac, random.Random(seed), noise
         # A player does not linger at random -- they linger where there is
         # something to record: a codebook to copy, a sequence to decode, the
         # register to stage and verify. Drawing is real-time, so an open door and
         # an unfinished page compete, but only in rooms that gave them work.
         self.write_p = write_p
+        self.dwell_max = dwell_max
         self.waits = 0
         self._writing = 0
         stops = [r for r in fac.rooms if fac.rooms[r].has_table]
@@ -93,7 +94,7 @@ class HabitualBot:
             self._intended = None
             return self.pos                      # mid-page, decline the window
         if has_work and self.rng.random() < self.write_p * 1.6:
-            self._writing = 0                        # one window per page
+            self._writing = self.rng.randint(0, self.dwell_max)  # a page can take several windows
             self.waits += 1
             self._intended = None
             return self.pos

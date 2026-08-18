@@ -232,3 +232,46 @@ class InterceptDirector:
         if best is None:
             best = max(path, key=lambda rp: rp[1])[0]
         return best if best_score >= self.gate or best_score < 0 else best
+
+
+class DwellAwareDirector:
+    """Uses learned dwell to turn a belief into an arrival.
+
+    A position-only interceptor asks "where will they be next window?" -- usually
+    a room it cannot reach in time. This one also asks "how long will they stay
+    where they are?". If the learned expected dwell is at least as long as the
+    walk, the antagonist does not need to predict a route at all: it simply comes
+    and collects the player while they are busy writing.
+
+    That is the whole argument for modelling dwell. Time-to-vacate is actionable
+    in a way that next-room probability is not.
+    """
+    name = "dwell-aware"
+
+    def __init__(self, model, dwell, fac, depth: int = 5):
+        self.model, self.dwell, self.fac, self.depth = model, dwell, fac, depth
+        self._base = InterceptDirector(model, fac, depth=depth)
+        self.commits = 0
+
+    def _dist_from(self, src):
+        d, q = {src: 0}, [src]
+        while q:
+            cur = q.pop(0)
+            for nb in self.fac.neighbors(cur):
+                if nb not in d:
+                    d[nb] = d[cur] + 1
+                    q.append(nb)
+        return d
+
+    def choose_target(self, history, player, entity, stay_k):
+        ed = self._dist_from(entity)
+        walk = ed.get(player)
+        if walk is not None:
+            remaining = self.dwell.expected_remaining(player, stay_k)
+            conf = self.dwell.confidence(player, stay_k)
+            # they will still be there when we arrive, and we have seen enough
+            # of this room to believe it
+            if remaining >= walk and conf >= 0.5:
+                self.commits += 1
+                return player
+        return self._base.choose_target(history, player, entity)

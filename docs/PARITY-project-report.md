@@ -222,7 +222,7 @@ than fear (§2.5). Three hard invariants:
 3. **Solvability invariant** — every topology mutation is checked for graph
    connectivity and objective reachability, and reverted if it would soft-lock the
    run. Both mutation operators revert any edit that fails this check, and the
-   property is asserted over 25 generated facilities in the invariant suite (§5.8).
+   property is asserted over 25 generated facilities in the invariant suite (§5.9).
 
 Notably, **no signal is emitted when sabotage occurs.** The player's hand-kept
 notebook is the only means of detecting it. Sabotage nonetheless lands almost
@@ -474,7 +474,46 @@ declining a window genuinely denies it information. That change converts the pro
 from fully-observed to partially-observed sequence prediction, and it is the single
 most valuable thing this experiment identified.
 
-### 5.8 Invariant test suite
+### 5.8 Is the time a player spends in their notebook learnable?
+
+Dwell was initially treated as a fixed parameter of the simulated player. That is
+the wrong framing: **how long someone lingers is one of the most individual things
+they do.** A player who copies an entire lookup table before moving behaves nothing
+like one who takes a single row and runs, and the difference is learnable from their
+own play. It is also the *actionable* signal — "they will be in room D for three
+more windows" tells the antagonist how long it has to walk there, which
+next-room probability does not.
+
+Measured directly as a binary task: at each window, will this player decline to
+move? The baseline is the majority class, which is what you get from knowing nothing
+about the person.
+
+![Accuracy predicting whether the player will decline the next window](../out/fig_dwell.png)
+
+| Predictor | Accuracy |
+|---|---|
+| Majority class — "they always move" | 54.5% |
+| **VOMM, all rooms** | **70.1%** |
+| VOMM, rooms with nothing to record | 99.9% |
+| VOMM, rooms holding a codebook | 66.9% |
+
+A lift of **15.6 points** over the baseline, and the breakdown is the
+interesting part. In rooms with nothing to record the model is essentially never
+wrong — it has learned the player does not linger where there is no work. In rooms
+that hold a codebook it is right two thirds of the time: it knows they may be
+writing, but not precisely when the page is finished. The residual uncertainty sits
+exactly where the genuine behavioural variation is.
+
+**An explicit dwell model adds nothing on top.** A hazard model over consecutive
+declines, used to commit the antagonist to walking at a player it believes is still
+writing, performed 2.0% *worse* than position-only interception
+(288 vs 294 captures per 1000). The reason is that once staying is a
+legal action, the sequence model already represents dwell: when it expects the
+player to linger, its rolled-forward path is simply the same room repeated, and the
+interceptor already walks there. Including `vₜ` in the candidate set is sufficient;
+modelling duration separately is redundant.
+
+### 5.9 Invariant test suite
 
 Nine invariants are asserted over 25 generated facilities and thousands of simulated
 moves (`model/test_invariants.py`, all passing):
@@ -491,7 +530,7 @@ moves (`model/test_invariants.py`, all passing):
 | Director never mutates a visible room | Fairness rule 1 |
 | Director never edits below its confidence gate | Fairness rule 2 |
 
-### 5.9 Interactive demonstration
+### 5.10 Interactive demonstration
 
 A browser demo runs the full loop live: room graph, per-room predicted
 probabilities, an entity that intercepts on prediction, codebook recording, and staying as a legal choice at every window, and all

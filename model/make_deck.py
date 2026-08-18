@@ -13,6 +13,7 @@ M = json.loads((ROOT / "out" / "metrics.json").read_text())
 E4 = M["e4_pursuit"]; E5 = M["e5_disruption"]
 E6U, E6S = M["e6_sabotage"], M["e6_sabotage_skewed"]
 E7 = M["e7_scaling"]; E8 = M["e8_waiting"]
+E9 = M["e9_dwell"]; E10 = M["e10_dwell_learned"]
 R_CTL = E4["vomm-intercept"]["per_1000"] / E4["random-walk"]["per_1000"]
 R_HUB = E4["vomm-intercept"]["per_1000"] / E4["hub-camp"]["per_1000"]
 SIZES = sorted(int(k) for k in E7)
@@ -121,7 +122,7 @@ table(s, [
     ["Literature review (min. 15 recent papers)", "Sections 4–7", "22 works, 20 from 2023 or later"],
     ["Design of proposed methodology", "Sections 8–11", "Formal model + evaluation protocol"],
     ["Module description / system design", "Sections 12–13", "8 modules, implemented and tested"],
-    ["Beyond the rubric", "Sections 14–23", "Eight experiments, 9 invariants, a live demo"],
+    ["Beyond the rubric", "Sections 14–24", "Ten experiments, 9 invariants, a live demo"],
 ], col_w=[4.3, 4.0, 3.6], size=12.5)
 
 # ---------------------------------------------------------------- 3 domain
@@ -428,8 +429,20 @@ tb(s, 1.05, 4.40, 11.3, 1.75,
    size=13, line=1.3, space=5)
 
 
+# ---------------------------------------------------------------- dwell
+s = slide(); header(s, "21 · Results — what it learns about your notebook", "Dwell is behaviour, not a parameter")
+picture(s, "fig_dwell.png", 2.5, 1.82, 8.4)
+tb(s, 0.72, 5.95, 11.9, 1.25,
+   f"How long you linger is one of the most individual things you do — and it is the actionable signal: "
+   f"'they will be in room D for three more windows' tells the antagonist how long it has to walk there. "
+   f"A {E10['lift_points']:.0f}-point lift over the majority class. It is never wrong in rooms with nothing to record, and "
+   f"right two thirds of the time where a codebook is — the uncertainty sits exactly where the real variation is. "
+   f"An explicit dwell model adds nothing ({E9['dwell-aware']['improvement_pct']:+.1f}%): once staying is a legal action, the sequence "
+   "model already represents it.", size=12, color=MUT, line=1.28)
+
+
 # ---------------------------------------------------------------- verification
-s = slide(); header(s, "21 · Verification", "Nine invariants, asserted over 25 generated facilities")
+s = slide(); header(s, "22 · Verification", "Nine invariants, asserted over 25 generated facilities")
 table(s, [
     ["Invariant", "Guards against"],
     ["Facility connected on construction", "Unplayable generated levels"],
@@ -446,7 +459,7 @@ tb(s, 0.72, 6.35, 11.9, 0.5, "9 / 9 passing  ·  python3 model/test_invariants.p
    size=14, bold=True, color=GRN)
 
 # ---------------------------------------------------------------- 20 demo
-s = slide(); header(s, "22 · Live demonstration", "The full loop, running")
+s = slide(); header(s, "23 · Live demonstration", "The full loop, running")
 bullets(s, [
     ("Room graph —", "live per-room predicted probabilities drawn on the facility."),
     ("Entity —", "moves to intercept where the model points, gated on confidence."),
@@ -467,7 +480,7 @@ tb(s, 1.05, 5.24, 11.3, 1.1,
 
 
 # ---------------------------------------------------------------- 21 roadmap
-s = slide(); header(s, "23 · Roadmap", "Three of nine milestones complete")
+s = slide(); header(s, "24 · Roadmap", "Three of nine milestones complete")
 table(s, [
     ["Milestone", "Deliverable", "State"],
     ["M0", "Headless simulation core, telemetry, bot harness", "Complete"],
@@ -585,17 +598,23 @@ NOTES = {
      "stationary target. That diagnosis is what set the next milestone: sense the player through "
      "door motion-detectors instead of omniscience, which turns this into partially-observed "
      "prediction. If you only defend one slide well, defend this one.",
- 23: "Nine invariants, 25 facilities, all passing. The two that matter: uplink reachable after "
+ 23: "This slide exists because someone asked whether the time a player spends in their "
+     "notebook is itself something to learn. It is — and the model already had. Lead with the "
+     "plain-rooms bar: 100%, because it learned you never linger where there is nothing to "
+     "record. The codebook bar at 67% is the honest one: it knows you may be writing, not when "
+     "you will finish. Also say that an explicit dwell model made things slightly WORSE, because "
+     "the sequence model already captures dwell once staying is a legal action.",
+ 24: "Nine invariants, 25 facilities, all passing. The two that matter: uplink reachable after "
      "mutation (the AI can never soft-lock you) and VOMM approximating uniform on a random "
      "player (no leakage). Offer to run it live — it takes seconds.",
- 24: "Run the demo. Press auto-play and talk over it. Point at the belief panel, then the live "
+ 25: "Run the demo. Press auto-play and talk over it. Point at the belief panel, then the live "
      "accuracy comparison, then the learned-rule readout, then the counter-move counters.",
- 25: "M0 to M2 done, M3 next; the 3D game does not exist yet. M6 to M8 are specified from the "
+ 26: "M0 to M2 done, M3 next; the 3D game does not exist yet. M6 to M8 are specified from the "
      "design work: door sensors and partial observation, polygonal room tiles where side count "
      "IS the difficulty setting, and the outbound register the AI can tamper with before you "
      "send. Say that the negative result on slide 22 is what prioritised M6.",
- 26: "References 1 to 11.",
- 27: "References 12 to 22.",
+ 27: "References 1 to 11.",
+ 28: "References 12 to 22.",
 }
 
 for idx, sl in enumerate(prs.slides, start=1):

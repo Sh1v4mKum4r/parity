@@ -91,6 +91,12 @@ by only 1.7%. The antagonist currently observes position perfectly, so standing
 still cannot conceal — it only parks you. Next milestone is door motion-sensors and
 partial observation, which is what this experiment identified.
 
+**Dwell is learned, not assumed.** How long a player lingers is behaviour, and the
+model picks it up: predicting "will they decline this window?" it scores
+70% against a 54% majority-class baseline — 100% in rooms with nothing to
+record, 67% in rooms holding a codebook. An explicit dwell model adds nothing
+on top: once staying is a legal action the sequence model already represents it.
+
 ## Verification
 
 ```

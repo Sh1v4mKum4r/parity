@@ -16,8 +16,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 from facility import Facility
 from bots import HabitualBot, ExplorerBot, RandomBot, EvasiveBot
-from predictors import UniformNeighbour, MarkovOrder1, VOMM
-from director import ModelDirector, RandomAmbush, DegreeCamp, FullDirector, InterceptDirector
+from predictors import UniformNeighbour, MarkovOrder1, VOMM, DwellModel
+from director import ModelDirector, RandomAmbush, DegreeCamp, FullDirector, InterceptDirector, DwellAwareDirector
 
 BOTS = {"habitual": HabitualBot, "explorer": ExplorerBot,
         "random": RandomBot, "evasive": EvasiveBot}
@@ -391,6 +391,109 @@ def e8_waiting_defends(steps=1500):
     return out
 
 
+
+def e9_dwell_aware(steps=1500, dwell_max=3):
+    """Does learning how long the player lingers make the antagonist better?
+
+    Same predictor, same facility, same player. The only difference is whether the
+    antagonist also models time-to-vacate and commits to walking to a player it
+    believes is still busy writing.
+    """
+    from bots import _bfs_path
+    out = {}
+    for label in ("position-only", "dwell-aware"):
+        rates, commits = [], []
+        for seed in range(SEEDS):
+            fac = Facility(10, seed=seed)
+            bot = BOTS["habitual"](fac, seed=seed + 100, dwell_max=dwell_max)
+            model, dwell = VOMM(), DwellModel()
+            base = InterceptDirector(model, fac)
+            dw = DwellAwareDirector(model, dwell, fac)
+            rng = random.Random(seed + 31)
+            epos = rng.choice(list(fac.rooms))
+            hist, caught, n, k = [bot.pos], 0, 0, 0
+            for _ in range(steps):
+                if label == "dwell-aware":
+                    target = dw.choose_target(hist[-CTX:], hist[-1], epos, k) or epos
+                else:
+                    target = base.choose_target(hist[-CTX:], hist[-1], epos) or epos
+                path = _bfs_path(fac, epos, target)
+                epos = path[1] if len(path) > 1 else epos
+
+                prev = hist[-1]
+                actual = bot.step(); bot.resync(actual)
+                stayed = (actual == prev)
+                dwell.observe(prev, k, stayed)
+                k = k + 1 if stayed else 0
+                n += 1
+                if actual == epos:
+                    caught += 1
+                    actual = rng.choice(list(fac.rooms)); bot.resync(actual)
+                    epos = rng.choice(list(fac.rooms)); k = 0
+                model.observe(hist[-CTX:], actual)
+                hist.append(actual)
+            rates.append(1000.0 * caught / n)
+            commits.append(dw.commits)
+        out[label] = {"per_1000": statistics.mean(rates), "sd": statistics.pstdev(rates)}
+        if label == "dwell-aware":
+            out[label]["dwell_commits"] = statistics.mean(commits)
+    a, b = out["position-only"]["per_1000"], out["dwell-aware"]["per_1000"]
+    out["dwell-aware"]["improvement_pct"] = 100.0 * (b / a - 1)
+    return out
+
+
+
+def e10_dwell_learned(steps=1500, dwell_max=3):
+    """Is the time a player spends in their notebook learnable -- and is it learned?
+
+    Dwell is not a nuisance parameter to be assumed; it is one of the most
+    individual things a player does. This measures it directly as a binary task:
+    at each window, will this player decline to move? The baseline is the majority
+    class ("they always move"), which is what you get from knowing nothing about
+    the person.
+
+    The breakdown by room type is the interesting part: a room with nothing to
+    record should be trivially predictable, and a room with a codebook in it
+    should not be.
+    """
+    out = {"dwell_max": dwell_max}
+    v, b, t, pl, rate = [], [], [], [], []
+    for seed in range(SEEDS):
+        fac = Facility(10, seed=seed)
+        bot = BOTS["habitual"](fac, seed=seed + 100, dwell_max=dwell_max)
+        m = VOMM()
+        hist = [bot.pos]
+        hv = hb = n = tv = tn = pv = pn = st = 0
+        for _ in range(steps):
+            cur = hist[-1]
+            cands = opts(fac, cur)
+            d = m.predict(hist[-CTX:], cands)
+            pred_stay = d.get(cur, 0.0) > 0.5
+            actual = bot.step(); bot.resync(actual)
+            stayed = (actual == cur)
+            n += 1; st += stayed
+            hv += (pred_stay == stayed)
+            hb += (not stayed)                      # majority class: always move
+            room = fac.rooms[cur]
+            if room.has_table or room.has_terminal or room.is_comms:
+                tn += 1; tv += (pred_stay == stayed)
+            else:
+                pn += 1; pv += (pred_stay == stayed)
+            m.observe(hist[-CTX:], actual); hist.append(actual)
+        v.append(hv / n); b.append(hb / n)
+        t.append(tv / max(tn, 1)); pl.append(pv / max(pn, 1))
+        rate.append(st / n)
+    out.update({
+        "actual_dwell_rate": statistics.mean(rate),
+        "baseline_accuracy": statistics.mean(b),
+        "vomm_accuracy": statistics.mean(v),
+        "vomm_task_rooms": statistics.mean(t),
+        "vomm_plain_rooms": statistics.mean(pl),
+    })
+    out["lift_points"] = 100.0 * (out["vomm_accuracy"] - out["baseline_accuracy"])
+    return out
+
+
 def main():
     res = {
         "config": {"rooms": 10, "steps": STEPS, "seeds": SEEDS, "context": CTX},
@@ -403,6 +506,8 @@ def main():
         "e6_sabotage_skewed": e6_sabotage_precision(skew=True),
         "e7_scaling": e7_scaling(),
         "e8_waiting": e8_waiting_defends(),
+        "e9_dwell": e9_dwell_aware(),
+        "e10_dwell_learned": e10_dwell_learned(),
     }
     out = Path(__file__).parent.parent / "out"
     out.mkdir(exist_ok=True)
@@ -414,7 +519,9 @@ def main():
     print("E6 uniform reliance:", json.dumps(res["e6_sabotage"]))
     print("E6 uneven reliance :", json.dumps(res["e6_sabotage_skewed"]))
     print("E7 scaling    :", json.dumps(res["e7_scaling"]))
-    print("E8 waiting    :", json.dumps(res["e8_waiting"], indent=2))
+    print("E8 waiting    :", json.dumps(res["e8_waiting"]))
+    print("E9 dwell-aware:", json.dumps(res["e9_dwell"]))
+    print("E10 dwell learned:", json.dumps(res["e10_dwell_learned"], indent=2))
     return res
 
 

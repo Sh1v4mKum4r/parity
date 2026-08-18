@@ -141,6 +141,27 @@ def fig_scaling(out):
     fig.tight_layout(); fig.savefig(out, dpi=200); plt.close(fig)
 
 
+def fig_dwell(out):
+    E = M["e10_dwell_learned"]
+    labels = ["Assume they\nalways move", "VOMM\n(all rooms)",
+              "VOMM in rooms\nwith nothing to record", "VOMM in rooms\nwith a codebook"]
+    vals = [E["baseline_accuracy"], E["vomm_accuracy"], E["vomm_plain_rooms"], E["vomm_task_rooms"]]
+    cols = ["#9aa3ab", "#2a78d6", "#2a78d6", "#2a78d6"]
+    fig, ax = plt.subplots(figsize=(8.2, 4.0))
+    ax.bar(range(len(vals)), [x * 100 for x in vals], width=0.5, color=cols, zorder=3)
+    for i, x in enumerate(vals):
+        ax.text(i, x * 100 + 1.8, f"{x*100:.0f}%", ha="center", fontsize=11,
+                fontweight="bold", color=INK)
+    ax.set_xticks(range(len(vals))); ax.set_xticklabels(labels, fontsize=9)
+    ax.set_ylabel("Accuracy predicting 'will they stay?'"); ax.set_ylim(0, 112)
+    ax.set_yticks([0, 25, 50, 75, 100]); ax.set_yticklabels(["0%", "25%", "50%", "75%", "100%"])
+    ax.grid(axis="y", color=GRID, lw=0.8, zorder=0); ax.set_axisbelow(True)
+    _finish(ax, "It learned where you stop to write",
+            f"Dwell as a binary prediction task. Actual dwell rate {E['actual_dwell_rate']*100:.0f}%; "
+            "pages take 1-4 windows")
+    fig.tight_layout(); fig.savefig(out, dpi=200); plt.close(fig)
+
+
 if __name__ == "__main__":
     out = ROOT / "out"; out.mkdir(exist_ok=True)
     fig_accuracy(out / "fig_accuracy.png")
@@ -148,4 +169,5 @@ if __name__ == "__main__":
     fig_capture(out / "fig_capture.png")
     fig_disruption(out / "fig_disruption.png")
     fig_scaling(out / "fig_scaling.png")
+    fig_dwell(out / "fig_dwell.png")
     print("figures written:", *[p.name for p in sorted(out.glob("*.png"))])
