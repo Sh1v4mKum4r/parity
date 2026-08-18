@@ -1,0 +1,484 @@
+<title>Parity Facility Monitor</title>
+<style>
+  :root{
+    --ground:#0b0a08; --panel:#15130f; --panel-2:#1d1a14; --line:#2e2920;
+    --ink:#e8dcc4; --ink-2:#b3a68c; --muted:#8a7f6a;
+    --amber:#ffb545; --amber-dim:#8a5f18; --red:#ff4d3d; --green:#5fd39a; --blue:#6fa8ff;
+    --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--mono);
+       font-size:13px;line-height:1.5;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1180px;margin:0 auto;padding:20px 18px 40px;display:flex;flex-direction:column;gap:16px}
+  header{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap;
+         border-bottom:1px solid var(--line);padding-bottom:12px}
+  h1{margin:0;font-size:20px;letter-spacing:.22em;font-weight:700;color:var(--amber)}
+  .sub{color:var(--muted);font-size:11.5px;letter-spacing:.04em;max-width:62ch}
+  .stage{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(280px,1fr);gap:16px}
+  @media(max-width:880px){.stage{grid-template-columns:1fr}}
+  .card{background:var(--panel);border:1px solid var(--line);padding:12px 13px}
+  .card h2{margin:0 0 9px;font-size:10.5px;letter-spacing:.19em;text-transform:uppercase;color:var(--muted);font-weight:500}
+  canvas{display:block;width:100%;height:auto;background:var(--panel);border:1px solid var(--line);cursor:pointer}
+  .rail{display:flex;flex-direction:column;gap:12px;min-width:0}
+  .row{display:flex;justify-content:space-between;gap:10px;padding:3px 0;font-variant-numeric:tabular-nums}
+  .row span:last-child{color:var(--ink)}
+  .row span:first-child{color:var(--ink-2)}
+  .bar{height:7px;background:var(--panel-2);position:relative;margin-top:3px;border:1px solid var(--line)}
+  .bar i{position:absolute;inset:0 auto 0 0;background:var(--amber);display:block}
+  .bar.b2 i{background:var(--blue)}
+  .pred{display:flex;flex-direction:column;gap:6px}
+  .pred .p{display:grid;grid-template-columns:34px 1fr 46px;gap:8px;align-items:center;font-variant-numeric:tabular-nums}
+  .glyph{width:26px;height:26px;display:grid;place-items:center;border:1px solid var(--line);
+         background:var(--panel-2);font-weight:700;font-size:12px}
+  .stat-big{font-size:26px;font-weight:700;letter-spacing:.02em;font-variant-numeric:tabular-nums}
+  .cmp{display:grid;grid-template-columns:1fr 1fr;gap:10px;text-align:left}
+  .cmp div{border:1px solid var(--line);background:var(--panel-2);padding:8px 9px}
+  .cmp .lbl{font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--muted)}
+  .log{height:132px;overflow-y:auto;background:var(--panel-2);border:1px solid var(--line);padding:8px 10px;
+       font-size:11.5px;display:flex;flex-direction:column;gap:2px}
+  .log p{margin:0;color:var(--ink-2)}
+  .log p b{color:var(--amber);font-weight:400}
+  .log p.bad b{color:var(--red)}
+  .log p.good b{color:var(--green)}
+  button{font-family:var(--mono);font-size:11.5px;letter-spacing:.09em;text-transform:uppercase;
+         background:var(--panel-2);color:var(--ink);border:1px solid var(--line);padding:7px 11px;cursor:pointer}
+  button:hover{border-color:var(--amber);color:var(--amber)}
+  button:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
+  button.on{background:var(--amber-dim);border-color:var(--amber);color:var(--ink)}
+  .btns{display:flex;gap:8px;flex-wrap:wrap}
+  table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
+  th,td{text-align:left;padding:3px 6px 3px 0;font-weight:400}
+  th{color:var(--muted);font-size:10px;letter-spacing:.11em;text-transform:uppercase}
+  td.code{letter-spacing:.19em}
+  .stale{color:var(--red)}
+  .fresh{color:var(--green)}
+  .hint{color:var(--muted);font-size:11px}
+  .keyw{color:var(--amber);letter-spacing:.09em}
+  .note{border-left:2px solid var(--amber-dim);padding-left:9px;color:var(--ink-2);font-size:11.5px}
+</style>
+
+<div class="wrap">
+  <header>
+    <div>
+      <h1>P A R I T Y</h1>
+      <div class="sub">Facility monitor &mdash; live view of the predictive model. Move between rooms; the model
+        learns your routes and the entity intercepts where it expects you, not where you are.</div>
+    </div>
+    <div class="btns">
+      <button id="btn-auto">Auto-play habitual player</button>
+      <button id="btn-reset">Reset facility</button>
+    </div>
+  </header>
+
+  <div class="stage">
+    <div>
+      <canvas id="cv" width="1200" height="740" aria-label="Facility room graph"></canvas>
+      <div class="card" style="margin-top:12px">
+        <h2>Transmission log</h2>
+        <div class="log" id="log"></div>
+      </div>
+    </div>
+
+    <div class="rail">
+      <div class="card">
+        <h2>Model belief &mdash; next room</h2>
+        <div class="pred" id="pred"></div>
+        <div class="hint" id="conf" style="margin-top:9px"></div>
+      </div>
+
+      <div class="card">
+        <h2>Prediction accuracy (live)</h2>
+        <div class="cmp">
+          <div><div class="lbl">VOMM</div><div class="stat-big" id="acc-v">&mdash;</div>
+            <div class="bar"><i id="bar-v" style="width:0"></i></div></div>
+          <div><div class="lbl">No model</div><div class="stat-big" id="acc-u">&mdash;</div>
+            <div class="bar b2"><i id="bar-u" style="width:0"></i></div></div>
+        </div>
+        <div class="hint" style="margin-top:8px" id="learned">Learning&hellip;</div>
+      </div>
+
+      <div class="card">
+        <h2>Objective</h2>
+        <div id="obj"></div>
+      </div>
+
+      <div class="card">
+        <h2>Notebook &mdash; recorded codes</h2>
+        <table><thead><tr><th>Room</th><th>Keyword</th><th>Your record</th></tr></thead>
+          <tbody id="nb"></tbody></table>
+        <div class="hint" style="margin-top:7px">Your pages are never edited. The facility is.</div>
+      </div>
+
+      <div class="card">
+        <h2>Run</h2>
+        <div class="row"><span>Moves</span><span id="s-moves">0</span></div>
+        <div class="row"><span>Captures</span><span id="s-caught">0</span></div>
+        <div class="row"><span>Signals sent</span><span id="s-sent">0</span></div>
+        <div class="row"><span>Signals corrupted</span><span id="s-bad">0</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+"use strict";
+// ---------- seeded RNG so a demo can be replayed exactly ----------
+let _s = 20260818;
+const rnd = () => (_s = (_s * 1664525 + 1013904223) >>> 0) / 4294967296;
+const pick = a => a[Math.floor(rnd() * a.length)];
+
+const GLYPHS = "ABCDEFGHIJ";
+const KEYWORDS = ["HELP US", "WARNING", "MAYDAY", "ALERT", "CODE RED"];
+const N = 10;
+
+// ---------- variable-order Markov model ----------
+class VOMM {
+  constructor(k = 4, alpha = 1.6){ this.k = k; this.alpha = alpha; this.c = new Map(); this.t = new Map(); }
+  _key(ctx){ return ctx.join(">"); }
+  predict(hist, cands){
+    if(!cands.length) return {};
+    let d = {}; cands.forEach(c => d[c] = 1 / cands.length);
+    for(let o = 0; o <= this.k; o++){
+      if(o > hist.length) break;
+      const ctx = this._key(hist.slice(hist.length - o));
+      const tot = this.t.get(ctx) || 0;
+      if(tot <= 0) continue;
+      const row = this.c.get(ctx); if(!row) continue;
+      let seen = 0; cands.forEach(c => seen += (row.get(c) || 0));
+      if(seen <= 0) continue;
+      const w = tot / (tot + this.alpha);
+      const nd = {}; cands.forEach(c => nd[c] = w * ((row.get(c) || 0) / seen) + (1 - w) * d[c]);
+      d = nd;
+    }
+    let z = 0; cands.forEach(c => z += d[c]); z = z || 1;
+    cands.forEach(c => d[c] /= z);
+    return d;
+  }
+  observe(hist, actual){
+    for(let o = 0; o <= this.k; o++){
+      if(o > hist.length) break;
+      const ctx = this._key(hist.slice(hist.length - o));
+      if(!this.c.has(ctx)) this.c.set(ctx, new Map());
+      const row = this.c.get(ctx);
+      row.set(actual, (row.get(actual) || 0) + 1);
+      this.t.set(ctx, (this.t.get(ctx) || 0) + 1);
+    }
+  }
+  topHabit(minN = 8){
+    let best = null;
+    for(const [ctx, row] of this.c){
+      const tot = this.t.get(ctx) || 0;
+      if(!ctx || tot < minN) continue;
+      let room = null, n = 0;
+      for(const [r, v] of row) if(v > n){ n = v; room = r; }
+      const p = n / tot;
+      if(!best || p > best.p) best = { ctx, room, p, tot };
+    }
+    return best;
+  }
+}
+
+// ---------- facility ----------
+function buildFacility(){
+  const rooms = [];
+  for(let i = 0; i < N; i++) rooms.push({ id:i, glyph:GLYPHS[i], nb:[], x:0, y:0, kind:"plain", code:null, kw:null });
+  const link = (a,b) => { if(a!==b && !rooms[a].nb.includes(b)){ rooms[a].nb.push(b); rooms[b].nb.push(a); } };
+  const order = [...Array(N).keys()];
+  for(let i = order.length - 1; i > 0; i--){ const j = Math.floor(rnd()*(i+1)); [order[i],order[j]]=[order[j],order[i]]; }
+  for(let i = 1; i < N; i++) link(order[i], order[Math.floor(rnd()*i)]);
+  for(let a = 0; a < N; a++) for(let b = a+1; b < N; b++) if(rnd() < 0.09) link(a,b);
+
+  const ids = [...Array(N).keys()].sort(() => rnd() - 0.5);
+  rooms[ids[0]].kind = "comms";
+  for(let i = 1; i <= KEYWORDS.length; i++){
+    const r = rooms[ids[i]];
+    r.kind = "table"; r.kw = KEYWORDS[i-1];
+    r.code = Array.from({length:4}, () => rnd() < 0.5 ? "0" : "1").join("");
+  }
+  // force layout
+  rooms.forEach((r,i) => { const a = i/N*Math.PI*2; r.x = 600 + Math.cos(a)*260 + (rnd()-0.5)*70; r.y = 370 + Math.sin(a)*210 + (rnd()-0.5)*70; });
+  for(let it = 0; it < 420; it++){
+    rooms.forEach(a => { let fx=0, fy=0;
+      rooms.forEach(b => { if(a===b) return;
+        let dx=a.x-b.x, dy=a.y-b.y, d=Math.hypot(dx,dy)||1;
+        const rep = 26000/(d*d); fx += dx/d*rep; fy += dy/d*rep;
+        if(a.nb.includes(b.id)){ const k=(d-215)*0.045; fx -= dx/d*k; fy -= dy/d*k; }
+      });
+      a.x = Math.max(85, Math.min(1115, a.x + fx*0.35));
+      a.y = Math.max(75, Math.min(665, a.y + fy*0.35));
+    });
+  }
+  // normalise the layout to fill the canvas
+  const pad = 78;
+  const xs = rooms.map(r=>r.x), ys = rooms.map(r=>r.y);
+  const x0=Math.min(...xs), x1=Math.max(...xs), y0=Math.min(...ys), y1=Math.max(...ys);
+  const sx=(1200-pad*2)/Math.max(1,x1-x0), sy=(740-pad*2)/Math.max(1,y1-y0);
+  const sc=Math.min(sx,sy);
+  const ox=(1200-(x1-x0)*sc)/2, oy=(740-(y1-y0)*sc)/2;
+  rooms.forEach(r=>{ r.x=(r.x-x0)*sc+ox; r.y=(r.y-y0)*sc+oy; });
+  return rooms;
+}
+
+function farthestFrom(src){
+  const d = new Map([[src,0]]); const q=[src]; let best=src, bd=-1;
+  while(q.length){ const c=q.shift();
+    if(d.get(c)>bd){ bd=d.get(c); best=c; }
+    for(const nb of R[c].nb) if(!d.has(nb)){ d.set(nb,d.get(c)+1); q.push(nb); }
+  }
+  return best;
+}
+
+function bfsNext(rooms, from, to){
+  if(from === to) return from;
+  const prev = new Map([[from, null]]); const q = [from];
+  while(q.length){ const c = q.shift();
+    if(c === to){ let cur = to; while(prev.get(cur) !== null && prev.get(prev.get(cur)) !== null) cur = prev.get(cur);
+      return prev.get(cur) === null ? cur : cur; }
+    for(const nb of rooms[c].nb) if(!prev.has(nb)){ prev.set(nb, c); q.push(nb); }
+  }
+  return from;
+}
+
+// ---------- game state ----------
+let R, model, hist, player, entity, notebook, target, stats, auto = false, autoRoute = [], autoI = 0, pendingPred = null;
+
+function reset(){
+  _s = (Math.floor(performance.now()) ^ 20260818) >>> 0;
+  R = buildFacility();
+  model = new VOMM();
+  hist = []; notebook = new Map();
+  player = R.findIndex(r => r.kind === "comms");
+  entity = pick(R.filter(r => r.id !== player)).id;
+  stats = { moves:0, caught:0, sent:0, bad:0, vHit:0, uHit:0, nPred:0 };
+  newTarget(); logClear();
+  say("Facility online. " + KEYWORDS.length + " codebooks distributed. Uplink at room " + R[player].glyph + ".");
+  autoRoute = []; autoI = 0; pendingPred = null;
+  draw(); ui();
+}
+
+function newTarget(){
+  const tables = R.filter(r => r.kind === "table");
+  target = pick(tables).id;
+}
+
+// ---------- movement ----------
+function move(to){
+  if(!R[player].nb.includes(to)) return;
+
+  const cands = R[player].nb;
+  const dist = model.predict(hist, cands);
+  let best = cands[0]; cands.forEach(c => { if(dist[c] > dist[best]) best = c; });
+  pendingPred = best;
+
+  // entity acts on the prediction BEFORE the player commits.
+  // Fairness rules from the spec: it is slower than you, and when the model is
+  // unsure it hunts conventionally instead of intercepting.
+  let conf = 0; cands.forEach(c => conf = Math.max(conf, dist[c]));
+  if(stats.moves % 2 === 0){
+    const eTarget = conf >= 0.45 ? best : pick(R[entity].nb);
+    entity = bfsNext(R, entity, eTarget);
+  }
+
+  // scoring: model vs no-model control
+  stats.nPred++;
+  if(best === to) stats.vHit++;
+  if(pick(cands) === to) stats.uHit++;
+
+  model.observe(hist, to);
+  hist.push(to); if(hist.length > 8) hist.shift();
+  player = to; stats.moves++;
+
+  if(player === entity){
+    stats.caught++;
+    say("Intercepted in room " + R[player].glyph + ". It was already there.", "bad");
+    player = pick(R.filter(r => r.id !== entity)).id;
+    entity = farthestFrom(player);
+    hist = [player];
+  }
+
+  onEnter();
+  sabotage();
+  draw(); ui();
+}
+
+function onEnter(){
+  const r = R[player];
+  if(r.kind === "table"){
+    const had = notebook.get(r.id);
+    notebook.set(r.id, r.code);
+    if(had && had !== r.code) say("Codebook " + r.glyph + " does not match your page. It was changed.", "bad");
+    else if(!had) say("Recorded codebook " + r.glyph + " &mdash; <b>" + r.kw + "</b> = " + r.code);
+  }
+  if(r.kind === "comms") transmit();
+}
+
+function transmit(){
+  const t = R[target];
+  const recorded = notebook.get(t.id);
+  if(!recorded){ say("Uplink ready. You have not recorded <b>" + t.kw + "</b> yet &mdash; codebook is in room " + t.glyph + "."); return; }
+  stats.sent++;
+  if(recorded === t.code){
+    say("SIGNAL ACCEPTED &mdash; <b>" + t.kw + "</b> transmitted intact (" + recorded + ").", "good");
+    newTarget();
+  } else {
+    stats.bad++;
+    say("SIGNAL CORRUPTED &mdash; you sent " + recorded + ", the facility now reads " + t.code + ".", "bad");
+    notebook.delete(t.id);
+  }
+}
+
+// ---------- sabotage: silent, and aimed where you are predicted to rely ----------
+function sabotage(){
+  if(stats.moves < 12 || stats.moves % 7 !== 0) return;
+  const recorded = [...notebook.keys()].filter(id => id !== player);
+  if(!recorded.length) return;
+  const dist = model.predict(hist, R[player].nb);
+  let conf = 0; Object.values(dist).forEach(v => conf = Math.max(conf, v));
+  if(conf < 0.5) return;                       // unsure -> hunts conventionally instead
+  const room = R[pick(recorded)];
+  const i = Math.floor(rnd() * 4);
+  room.code = room.code.substring(0,i) + (room.code[i] === "0" ? "1" : "0") + room.code.substring(i+1);
+  // no message. the player is told nothing.
+}
+
+// ---------- rendering ----------
+const cv = document.getElementById("cv"), ctx = cv.getContext("2d");
+function draw(){
+  const dist = model.predict(hist, R[player].nb);
+  ctx.fillStyle = "#15130f"; ctx.fillRect(0,0,cv.width,cv.height);
+
+  ctx.lineWidth = 2;
+  R.forEach(a => a.nb.forEach(b => { if(b < a.id) return;
+    ctx.strokeStyle = "#2e2920"; ctx.beginPath();
+    ctx.moveTo(a.x, a.y); ctx.lineTo(R[b].x, R[b].y); ctx.stroke();
+  }));
+
+  R.forEach(r => {
+    const p = dist[r.id] || 0, reach = R[player].nb.includes(r.id);
+    const rad = 34;
+    ctx.beginPath();
+    for(let i = 0; i < 6; i++){ const a = Math.PI/6 + i*Math.PI/3;
+      const X = r.x + Math.cos(a)*rad, Y = r.y + Math.sin(a)*rad;
+      i ? ctx.lineTo(X,Y) : ctx.moveTo(X,Y); }
+    ctx.closePath();
+    ctx.fillStyle = reach ? "rgba(255,181,69," + (0.10 + p*0.72).toFixed(3) + ")" : "#1d1a14";
+    ctx.fill();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = r.id === entity ? "#ff4d3d" : r.id === player ? "#e8dcc4" : reach ? "#8a5f18" : "#2e2920";
+    ctx.stroke();
+
+    ctx.fillStyle = reach || r.id === player || r.id === entity ? "#e8dcc4" : "#8a7f6a";
+    ctx.font = "700 17px ui-monospace,monospace"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText(r.glyph, r.x, r.y - 3);
+    ctx.font = "400 9.5px ui-monospace,monospace"; ctx.fillStyle = "#8a7f6a";
+    ctx.fillText(r.kind === "comms" ? "UPLINK" : r.kind === "table" ? "CODEBOOK" : "", r.x, r.y + 13);
+
+    if(reach && p > 0.02){
+      ctx.fillStyle = "#ffb545"; ctx.font = "700 11px ui-monospace,monospace";
+      ctx.fillText(Math.round(p*100) + "%", r.x, r.y - rad - 11);
+    }
+    if(r.id === target){ ctx.strokeStyle = "#5fd39a"; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.arc(r.x, r.y, rad + 7, 0, Math.PI*2); ctx.stroke(); }
+  });
+
+  // markers
+  const tag = (id, txt, col) => { const r = R[id];
+    ctx.fillStyle = col; ctx.font = "700 10px ui-monospace,monospace";
+    ctx.fillText(txt, r.x, r.y + 46); };
+  tag(player, "YOU", "#e8dcc4");
+  tag(entity, "ENTITY", "#ff4d3d");
+}
+
+// ---------- ui ----------
+const $ = id => document.getElementById(id);
+function ui(){
+  const cands = R[player].nb, dist = model.predict(hist, cands);
+  const sorted = [...cands].sort((a,b) => dist[b]-dist[a]);
+  $("pred").innerHTML = sorted.map(c => {
+    const p = dist[c] || 0;
+    return '<div class="p"><div class="glyph">'+R[c].glyph+'</div>'+
+      '<div class="bar"><i style="width:'+(p*100).toFixed(1)+'%"></i></div>'+
+      '<div style="text-align:right">'+(p*100).toFixed(0)+'%</div></div>';
+  }).join("");
+  const top = sorted.length ? (dist[sorted[0]]*100).toFixed(0) : 0;
+  $("conf").textContent = sorted.length
+    ? (dist[sorted[0]] >= 0.45
+        ? "Confidence " + top + "% on room " + R[sorted[0]].glyph + " — the entity is moving to intercept."
+        : "Confidence " + top + "% — too unsure to intercept; hunting conventionally.")
+    : "";
+
+  const v = stats.nPred ? stats.vHit/stats.nPred : 0, u = stats.nPred ? stats.uHit/stats.nPred : 0;
+  $("acc-v").textContent = stats.nPred ? Math.round(v*100)+"%" : "—";
+  $("acc-u").textContent = stats.nPred ? Math.round(u*100)+"%" : "—";
+  $("bar-v").style.width = (v*100)+"%"; $("bar-u").style.width = (u*100)+"%";
+
+  const h = model.topHabit();
+  $("learned").innerHTML = h
+    ? 'It learned: from <span class="keyw">'+h.ctx.split(">").map(i=>R[i].glyph).join("&rarr;")+
+      '</span> you go to <span class="keyw">'+R[h.room].glyph+'</span> '+Math.round(h.p*100)+'% of the time ('+h.tot+' obs).'
+    : "Learning… move around to build the model.";
+
+  const t = R[target];
+  $("obj").innerHTML = '<div class="note">Transmit <span class="keyw">'+t.kw+'</span> from the uplink.<br>'+
+    'Its codebook is in room <b>'+t.glyph+'</b>'+(notebook.has(t.id)?' &mdash; recorded.':' &mdash; not yet recorded.')+'</div>';
+
+  $("nb").innerHTML = [...notebook.entries()].map(([id,code]) => {
+    const r = R[id], stale = r.code !== code;
+    return '<tr><td>'+r.glyph+'</td><td>'+r.kw+'</td><td class="code '+(stale?"stale":"fresh")+'">'+code+'</td></tr>';
+  }).join("") || '<tr><td colspan="3" class="hint">Nothing recorded yet.</td></tr>';
+
+  $("s-moves").textContent = stats.moves; $("s-caught").textContent = stats.caught;
+  $("s-sent").textContent = stats.sent; $("s-bad").textContent = stats.bad;
+}
+
+function logClear(){ $("log").innerHTML = ""; }
+function say(msg, cls){
+  const p = document.createElement("p");
+  if(cls) p.className = cls;
+  p.innerHTML = "<b>&rsaquo;</b> " + msg;
+  $("log").prepend(p);
+  while($("log").children.length > 60) $("log").lastChild.remove();
+}
+
+// ---------- input ----------
+cv.addEventListener("click", e => {
+  const b = cv.getBoundingClientRect();
+  const x = (e.clientX - b.left) * (cv.width / b.width);
+  const y = (e.clientY - b.top) * (cv.height / b.height);
+  let hit = null;
+  R.forEach(r => { if(Math.hypot(r.x - x, r.y - y) < 38) hit = r.id; });
+  if(hit !== null && R[player].nb.includes(hit)){ auto = false; $("btn-auto").classList.remove("on"); move(hit); }
+});
+
+// habitual auto-player: walks a fixed circuit, which is exactly the behaviour the model feeds on
+function autoStep(){
+  if(!auto) return;
+  if(autoI >= autoRoute.length){
+    const stops = [target, R.findIndex(r => r.kind === "comms")];
+    autoRoute = []; let cur = player;
+    stops.forEach(dst => { let guard = 0;
+      while(cur !== dst && guard++ < 40){ cur = bfsNext(R, cur, dst); autoRoute.push(cur); } });
+    autoI = 0;
+    if(!autoRoute.length){ autoRoute = [pick(R[player].nb)]; }
+  }
+  const nxt = autoRoute[autoI++];
+  if(R[player].nb.includes(nxt)) move(nxt); else { autoRoute = []; autoI = 0; }
+  setTimeout(autoStep, 420);
+}
+
+$("btn-auto").addEventListener("click", () => {
+  auto = !auto; $("btn-auto").classList.toggle("on", auto);
+  $("btn-auto").textContent = auto ? "Stop auto-play" : "Auto-play habitual player";
+  if(auto){ autoRoute = []; autoI = 0; autoStep(); }
+});
+$("btn-reset").addEventListener("click", () => { auto = false; $("btn-auto").classList.remove("on");
+  $("btn-auto").textContent = "Auto-play habitual player"; reset(); });
+
+reset();
+if(new URLSearchParams(location.search).get("auto") === "1"){
+  auto = true; $("btn-auto").classList.add("on"); $("btn-auto").textContent = "Stop auto-play";
+  autoRoute = []; autoI = 0; autoStep();
+}
+})();
+</script>
