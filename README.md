@@ -17,6 +17,7 @@ and quietly degrading the information you have come to depend on.
 | `demo/parity-demo.html` | **Playable model demo — any browser, no server, no internet** |
 | `demo/parity-room.html` | **Walkable 3D room study — WASD + mouse, hand-written WebGL, no engine** |
 | `demo/parity-notebook.html` | **Freehand notebook prototype — stroke-based, undo, pages, local save** |
+| `demo/parity-slice.html` | **Vertical slice — door clock, notebook, register, and the AI tampering with a staged byte** |
 | `out/*.png` | Result figures and architecture diagram |
 | `out/metrics.json` | Raw numbers behind every figure |
 

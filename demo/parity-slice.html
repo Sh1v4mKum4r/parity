@@ -1,0 +1,579 @@
+<title>Parity Vertical Slice</title>
+<style>
+  :root{
+    --ground:#0b0a08; --panel:#14120e; --panel2:#1d1a14; --line:#2e2920;
+    --ink:#e8dcc4; --ink2:#b3a68c; --muted:#8a7f6a;
+    --amber:#ffb545; --amber-dim:#8a5f18; --red:#ff4d3d; --green:#5fd39a;
+    --paper:#15150f; --grid:#221f18; --pen:#f0d9a8;
+    --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--ground);color:var(--ink);
+            font-family:var(--mono);font-size:12px;overflow:hidden}
+  .wrap{height:100%;max-width:1240px;margin:0 auto;padding:12px 14px;
+        display:flex;flex-direction:column;gap:9px}
+  header{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap}
+  h1{margin:0;font-size:14px;letter-spacing:.22em;color:var(--amber);font-weight:700}
+  .sub{color:var(--muted);font-size:11px}
+  .clock{border:1px solid var(--line);background:var(--panel);padding:7px 10px}
+  .clockrow{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:6px}
+  .phase{font-size:13px;letter-spacing:.16em;font-weight:700}
+  .phase.lock{color:var(--muted)} .phase.open{color:var(--green)}
+  .track{height:8px;background:var(--panel2);border:1px solid var(--line);position:relative}
+  .track i{position:absolute;inset:0 auto 0 0;display:block;background:var(--amber)}
+  .track i.open{background:var(--green)}
+  main{flex:1;display:grid;grid-template-columns:minmax(0,1.5fr) minmax(300px,1fr);gap:11px;min-height:0}
+  .stage{position:relative;border:1px solid var(--line);background:var(--panel);min-height:0}
+  canvas{display:block;width:100%;height:100%}
+  .rail{display:flex;flex-direction:column;gap:9px;min-height:0;overflow-y:auto}
+  .card{border:1px solid var(--line);background:var(--panel);padding:10px 11px}
+  .card h2{margin:0 0 8px;font-size:9.5px;letter-spacing:.18em;text-transform:uppercase;
+           color:var(--muted);font-weight:500}
+  .row{display:flex;justify-content:space-between;gap:8px;padding:2px 0;font-variant-numeric:tabular-nums}
+  .row span:first-child{color:var(--ink2)}
+  button{font-family:var(--mono);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;
+         background:var(--panel2);color:var(--ink);border:1px solid var(--line);padding:6px 9px;cursor:pointer}
+  button:hover:not(:disabled){border-color:var(--amber);color:var(--amber)}
+  button:disabled{opacity:.35;cursor:not-allowed}
+  button.on{background:var(--amber-dim);border-color:var(--amber);color:#fff}
+  .btns{display:flex;gap:6px;flex-wrap:wrap}
+  .reg{display:flex;gap:5px;margin:8px 0 6px;flex-wrap:wrap}
+  .cell{width:32px;height:38px;border:1px solid var(--line);background:var(--panel2);
+        display:grid;place-items:center;font-size:15px;font-weight:700;cursor:pointer;user-select:none}
+  .cell:hover{border-color:var(--amber)}
+  .cell.par{border-style:dashed;color:var(--muted);cursor:default}
+  .cell small{position:absolute;margin-top:-30px;font-size:8px;color:var(--muted)}
+  .kw{color:var(--amber);letter-spacing:.1em}
+  .log{height:104px;overflow-y:auto;background:var(--panel2);border:1px solid var(--line);
+       padding:7px 9px;font-size:11px;display:flex;flex-direction:column;gap:2px}
+  .log p{margin:0;color:var(--ink2)} .log b{color:var(--amber);font-weight:400}
+  .log p.bad b{color:var(--red)} .log p.good b{color:var(--green)}
+  .book{position:absolute;inset:0;background:var(--paper);z-index:4;display:none;flex-direction:column}
+  .book.show{display:flex}
+  .bookbar{display:flex;gap:6px;align-items:center;padding:7px 9px;border-bottom:1px solid var(--line);
+           background:var(--panel);flex-wrap:wrap}
+  .bookbar .warn{margin-left:auto;color:var(--red);font-size:10.5px}
+  .book canvas{flex:1}
+  .banner{position:absolute;inset:0;background:rgba(11,10,8,.9);z-index:6;display:none;
+          place-items:center;text-align:center}
+  .banner.show{display:grid}
+  .banner h3{font-size:17px;letter-spacing:.2em;margin:0 0 10px}
+  .banner p{color:var(--muted);max-width:40ch;line-height:1.7;margin:0 0 14px}
+  .hint{color:var(--muted);font-size:10.5px;line-height:1.5}
+</style>
+
+<div class="wrap">
+  <header>
+    <div>
+      <h1>P A R I T Y &nbsp;&mdash;&nbsp; V E R T I C A L &nbsp; S L I C E</h1>
+      <div class="sub">Doors open together. Take one, or stay and finish writing.</div>
+    </div>
+    <div class="btns">
+      <button id="reset">Restart</button>
+    </div>
+  </header>
+
+  <div class="clock">
+    <div class="clockrow">
+      <span class="phase lock" id="phase">LOCKDOWN</span>
+      <span class="hint" id="phasehint"></span>
+    </div>
+    <div class="track"><i id="bar"></i></div>
+  </div>
+
+  <main>
+    <div class="stage">
+      <canvas id="cv"></canvas>
+      <div class="book" id="book">
+        <div class="bookbar">
+          <button id="pen" class="on">Pen</button>
+          <button id="eraser">Eraser</button>
+          <button id="undo">Undo</button>
+          <button id="prev">&larr;</button>
+          <span id="pg" class="hint"></span>
+          <button id="next">&rarr;</button>
+          <span class="warn">TIME IS STILL RUNNING</span>
+          <button id="closebook">Close</button>
+        </div>
+        <canvas id="bcv"></canvas>
+      </div>
+      <div class="banner" id="banner"><div>
+        <h3 id="btitle"></h3>
+        <p id="bbody"></p>
+        <button id="bgo">Continue</button>
+      </div></div>
+    </div>
+
+    <div class="rail">
+      <div class="card">
+        <h2>This room</h2>
+        <div id="room"></div>
+      </div>
+
+      <div class="card" id="regcard">
+        <h2>Outbound register</h2>
+        <div id="regbody"></div>
+      </div>
+
+      <div class="card">
+        <h2>Status</h2>
+        <div class="row"><span>Windows survived</span><span id="s-win">0</span></div>
+        <div class="row"><span>Signals accepted</span><span id="s-ok">0</span></div>
+        <div class="row"><span>Signals corrupted</span><span id="s-bad">0</span></div>
+        <div class="row"><span>Windows declined</span><span id="s-held">0</span></div>
+      </div>
+
+      <div class="card">
+        <h2>Log</h2>
+        <div class="log" id="log"></div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script>
+(() => {
+"use strict";
+const $ = id => document.getElementById(id);
+let _s = 424242;
+const rnd = () => (_s = (_s*1664525 + 1013904223) >>> 0) / 4294967296;
+const pick = a => a[Math.floor(rnd()*a.length)];
+
+const GLYPHS = "ABCDEFGH", N = 8;
+const KEYWORDS = ["HELP US","WARNING","MAYDAY","ALERT","CODE RED"];
+const LOCKDOWN = 7.0, WINDOW = 2.6;      // seconds; the whole rhythm of the game
+
+// ---------------- variable-order Markov model (same one, ported) ----------------
+class VOMM {
+  constructor(k=4, alpha=1.6){ this.k=k; this.alpha=alpha; this.c=new Map(); this.t=new Map(); }
+  predict(hist, cands){
+    if(!cands.length) return {};
+    let d={}; cands.forEach(c=>d[c]=1/cands.length);
+    for(let o=0;o<=this.k;o++){
+      if(o>hist.length) break;
+      const ctx = hist.slice(hist.length-o).join(">");
+      const tot = this.t.get(ctx)||0; if(tot<=0) continue;
+      const row = this.c.get(ctx); if(!row) continue;
+      let seen=0; cands.forEach(c=>seen += (row.get(c)||0));
+      if(seen<=0) continue;
+      const w = tot/(tot+this.alpha), nd={};
+      cands.forEach(c => nd[c] = w*((row.get(c)||0)/seen) + (1-w)*d[c]);
+      d = nd;
+    }
+    let z=0; cands.forEach(c=>z+=d[c]); z=z||1;
+    cands.forEach(c=>d[c]/=z);
+    return d;
+  }
+  observe(hist, actual){
+    for(let o=0;o<=this.k;o++){
+      if(o>hist.length) break;
+      const ctx = hist.slice(hist.length-o).join(">");
+      if(!this.c.has(ctx)) this.c.set(ctx,new Map());
+      const row=this.c.get(ctx);
+      row.set(actual,(row.get(actual)||0)+1);
+      this.t.set(ctx,(this.t.get(ctx)||0)+1);
+    }
+  }
+}
+
+// ---------------- state ----------------
+let R, player, entity, model, hist, phase, timer, reg, parity, staged;
+let stats, pages, page, undos, log, bookOpen, target, awaiting;
+
+function buildFacility(){
+  const rooms = [];
+  for(let i=0;i<N;i++) rooms.push({id:i, glyph:GLYPHS[i], nb:[], x:0, y:0, kind:"plain", kw:null, code:null});
+  const link=(a,b)=>{ if(a!==b && !rooms[a].nb.includes(b)){ rooms[a].nb.push(b); rooms[b].nb.push(a);} };
+  const order=[...Array(N).keys()];
+  for(let i=order.length-1;i>0;i--){ const j=Math.floor(rnd()*(i+1)); [order[i],order[j]]=[order[j],order[i]]; }
+  for(let i=1;i<N;i++) link(order[i], order[Math.floor(rnd()*i)]);
+  for(let a=0;a<N;a++) for(let b=a+1;b<N;b++) if(rnd()<0.19) link(a,b);
+
+  const ids=[...Array(N).keys()].sort(()=>rnd()-0.5);
+  rooms[ids[0]].kind="comms";
+  for(let i=1;i<=3;i++){
+    const r=rooms[ids[i]];
+    r.kind="codebook"; r.kw=KEYWORDS[i-1];
+    r.code=Array.from({length:8},()=>rnd()<0.5?"0":"1").join("");
+  }
+  rooms.forEach((r,i)=>{ const a=i/N*Math.PI*2; r.x=520+Math.cos(a)*250+(rnd()-.5)*50; r.y=300+Math.sin(a)*175+(rnd()-.5)*50; });
+  for(let it=0;it<420;it++){
+    rooms.forEach(a=>{ let fx=0,fy=0;
+      rooms.forEach(b=>{ if(a===b) return;
+        let dx=a.x-b.x, dy=a.y-b.y, d=Math.hypot(dx,dy)||1;
+        const rep=24000/(d*d); fx+=dx/d*rep; fy+=dy/d*rep;
+        if(a.nb.includes(b.id)){ const k=(d-205)*0.045; fx-=dx/d*k; fy-=dy/d*k; }
+      });
+      a.x=Math.max(70,Math.min(970,a.x+fx*0.35));
+      a.y=Math.max(60,Math.min(540,a.y+fy*0.35));
+    });
+  }
+  const xs=rooms.map(r=>r.x), ys=rooms.map(r=>r.y);
+  const x0=Math.min(...xs),x1=Math.max(...xs),y0=Math.min(...ys),y1=Math.max(...ys);
+  const sc=Math.min((1040-160)/Math.max(1,x1-x0),(600-140)/Math.max(1,y1-y0));
+  rooms.forEach(r=>{ r.x=(r.x-x0)*sc+80; r.y=(r.y-y0)*sc+70; });
+  return rooms;
+}
+
+function bfsNext(from,to){
+  if(from===to) return from;
+  const prev=new Map([[from,null]]), q=[from];
+  while(q.length){ const c=q.shift();
+    if(c===to){ let cur=to; while(prev.get(prev.get(cur))!==null && prev.get(cur)!==null) cur=prev.get(cur); return cur; }
+    for(const nb of R[c].nb) if(!prev.has(nb)){ prev.set(nb,c); q.push(nb); }
+  }
+  return from;
+}
+
+function parityOf(bits){ return (bits.split("").filter(b=>b==="1").length % 2) ? "1" : "0"; }
+
+function reset(){
+  _s = (Math.floor(performance.now()) ^ 424242) >>> 0;
+  R = buildFacility();
+  player = R.find(r=>r.kind==="comms").id;
+  entity = pick(R.filter(r=>r.id!==player)).id;
+  model = new VOMM(); hist = [player];
+  phase = "lock"; timer = LOCKDOWN;
+  reg = "00000000".split(""); staged = false;
+  stats = {win:0, ok:0, bad:0, held:0};
+  pages = [[]]; page = 0; undos = [[]]; bookOpen = false;
+  log = []; awaiting = false;
+  newTarget();
+  $("banner").classList.remove("show");
+  $("book").classList.remove("show");
+  say("Facility sealed. Doors cycle together. You are at the uplink.");
+  fit(); ui(); draw();
+}
+function newTarget(){ target = pick(R.filter(r=>r.kind==="codebook")).id; }
+
+function say(msg, cls){
+  log.unshift({msg, cls});
+  log = log.slice(0, 40);
+  $("log").innerHTML = log.map(l=>`<p class="${l.cls||""}"><b>&rsaquo;</b> ${l.msg}</p>`).join("");
+}
+
+// ---------------- the clock ----------------
+let last = performance.now();
+function tick(now){
+  const dt = Math.min((now-last)/1000, .1); last = now;
+  if(!awaiting){
+    timer -= dt;
+    if(timer <= 0){
+      if(phase === "open"){ resolveWindow(); phase="lock"; timer=LOCKDOWN; }
+      else { phase="open"; timer=WINDOW; say("Doors open."); }
+    }
+  }
+  const total = phase==="open" ? WINDOW : LOCKDOWN;
+  $("bar").style.width = Math.max(0, timer/total*100) + "%";
+  $("bar").className = phase==="open" ? "open" : "";
+  $("phase").textContent = phase==="open" ? "DOORS OPEN" : "LOCKDOWN";
+  $("phase").className = "phase " + (phase==="open" ? "open" : "lock");
+  $("phasehint").textContent = phase==="open"
+    ? "click a lit room to move, or do nothing to hold position"
+    : "sealed — write, read, or stage the register";
+  draw();
+  requestAnimationFrame(tick);
+}
+
+// The window closes: the player's choice is whatever room they are in, the model
+// learns it, and the entity moves one room toward where it expects them next.
+let movedThisWindow = false;
+function resolveWindow(){
+  if(!movedThisWindow){ stats.held++; }
+  movedThisWindow = false;
+  stats.win++;
+
+  const cands = R[player].nb.concat([player]);
+  const dist = model.predict(hist, cands);
+  let best = cands[0]; cands.forEach(c=>{ if(dist[c]>dist[best]) best=c; });
+  let conf = 0; cands.forEach(c=>conf=Math.max(conf, dist[c]||0));
+
+  model.observe(hist, player);
+  hist.push(player); if(hist.length>8) hist.shift();
+
+  if(stats.win % 2 === 0){
+    const t = conf >= 0.45 ? best : pick(R[entity].nb);
+    entity = bfsNext(entity, t);
+  }
+  if(entity === player) return caught();
+
+  tamper(conf);
+  ui();
+}
+
+// The AI's move: flip a bit you already staged, or poison a codebook you copied.
+// Only ever when you cannot see it happen -- and it never tells you.
+function tamper(conf){
+  if(stats.win < 3 || conf < 0.45 || rnd() > 0.5) return;
+  const atComms = R[player].kind === "comms";
+  if(staged && (!atComms || bookOpen)){
+    const i = Math.floor(rnd()*8);
+    reg[i] = reg[i]==="0" ? "1" : "0";
+    return;                                   // silence
+  }
+  const far = R.filter(r=>r.kind==="codebook" && r.id!==player);
+  if(far.length){
+    const r = pick(far), i = Math.floor(rnd()*8);
+    r.code = r.code.substring(0,i) + (r.code[i]==="0"?"1":"0") + r.code.substring(i+1);
+  }
+}
+
+function caught(){
+  awaiting = true;
+  $("btitle").textContent = "IT WAS ALREADY THERE";
+  $("bbody").textContent = "It reached room " + R[player].glyph + " before you did. Your pages survive; so does its model of you.";
+  $("banner").classList.add("show");
+}
+function win(){
+  awaiting = true;
+  $("btitle").textContent = "SIGNAL AWAY";
+  $("bbody").textContent = "Three uncorrupted keywords left the facility. Someone outside knows.";
+  $("banner").classList.add("show");
+}
+$("bgo").addEventListener("click", reset);
+
+// ---------------- moving ----------------
+function moveTo(id){
+  if(phase !== "open" || awaiting || bookOpen) return;
+  if(id === player || !R[player].nb.includes(id)) return;
+  player = id; movedThisWindow = true;
+  const r = R[player];
+  if(r.kind === "codebook") say("Codebook <b>" + r.glyph + "</b> — " + r.kw + " = " + r.code);
+  ui(); draw();
+}
+
+// ---------------- register ----------------
+function renderRegister(){
+  const r = R[player];
+  if(r.kind !== "comms"){
+    $("regbody").innerHTML = '<div class="hint">The uplink is in room <b>' +
+      R.find(x=>x.kind==="comms").glyph + '</b>. You can only transmit from there.</div>';
+    return;
+  }
+  const t = R[target];
+  $("regbody").innerHTML =
+    '<div class="hint">Transmit <span class="kw">' + t.kw + '</span> — its codebook is in room <b>' + t.glyph + '</b>.</div>' +
+    '<div class="reg" id="cells"></div>' +
+    '<div class="hint">Parity <b>' + parityOf(reg.join("")) + '</b> — the facility\'s own check bit. It is not a warning system.</div>' +
+    '<div class="btns" style="margin-top:8px"><button id="send">Send</button>' +
+    '<button id="zero">Clear</button></div>';
+  const cells = $("cells");
+  cells.innerHTML = reg.map((b,i)=>`<div class="cell" data-i="${i}">${b}</div>`).join("") +
+    `<div class="cell par">${parityOf(reg.join(""))}</div>`;
+  cells.addEventListener("click", e => {
+    const c = e.target.closest(".cell:not(.par)"); if(!c || awaiting) return;
+    const i = +c.dataset.i;
+    reg[i] = reg[i]==="0" ? "1" : "0";
+    staged = true; ui();
+  });
+  $("send").addEventListener("click", send);
+  $("zero").addEventListener("click", () => { reg = "00000000".split(""); staged=false; ui(); });
+}
+
+function send(){
+  const t = R[target];
+  const sent = reg.join("");
+  if(sent === t.code){
+    stats.ok++; staged=false;
+    say("SIGNAL ACCEPTED — <b>" + t.kw + "</b> left intact (" + sent + ").", "good");
+    reg = "00000000".split("");
+    newTarget();
+    if(stats.ok >= 3) return win();
+  } else {
+    stats.bad++;
+    say("SIGNAL CORRUPTED — you sent " + sent + "; the facility reads " + t.code + ".", "bad");
+  }
+  ui();
+}
+
+// ---------------- notebook ----------------
+const bcv = $("bcv"), bctx = bcv.getContext("2d");
+let tool="pen", drawing=false, erasing=false, curStroke=null, hover=null;
+const ERASER_R = 13;
+
+function bfit(){
+  const r = bcv.getBoundingClientRect(), d = window.devicePixelRatio||1;
+  bcv.width = Math.round(r.width*d); bcv.height = Math.round(r.height*d);
+  bctx.setTransform(d,0,0,d,0,0);
+  bdraw();
+}
+function bdraw(){
+  const w=bcv.clientWidth, h=bcv.clientHeight;
+  bctx.fillStyle="#15150f"; bctx.fillRect(0,0,w,h);
+  bctx.strokeStyle="#221f18"; bctx.lineWidth=1;
+  bctx.beginPath();
+  for(let x=26;x<w;x+=26){ bctx.moveTo(x+.5,0); bctx.lineTo(x+.5,h); }
+  for(let y=26;y<h;y+=26){ bctx.moveTo(0,y+.5); bctx.lineTo(w,y+.5); }
+  bctx.stroke();
+  for(const s of pages[page]){
+    bctx.globalAlpha = s.doomed ? .22 : 1;
+    bctx.strokeStyle="#f0d9a8"; bctx.lineWidth=s.w; bctx.lineCap="round"; bctx.lineJoin="round";
+    if(s.pts.length<2){ bctx.beginPath(); bctx.arc(s.pts[0].x,s.pts[0].y,s.w/2,0,Math.PI*2); bctx.fillStyle="#f0d9a8"; bctx.fill(); }
+    else{
+      bctx.beginPath(); bctx.moveTo(s.pts[0].x,s.pts[0].y);
+      for(let i=1;i<s.pts.length-1;i++){ const a=s.pts[i], b=s.pts[i+1];
+        bctx.quadraticCurveTo(a.x,a.y,(a.x+b.x)/2,(a.y+b.y)/2); }
+      bctx.lineTo(s.pts[s.pts.length-1].x, s.pts[s.pts.length-1].y); bctx.stroke();
+    }
+    bctx.globalAlpha=1;
+  }
+  if(tool==="eraser" && hover){
+    bctx.strokeStyle="rgba(255,181,69,.55)"; bctx.lineWidth=1;
+    bctx.beginPath(); bctx.arc(hover.x,hover.y,ERASER_R,0,Math.PI*2); bctx.stroke();
+  }
+  $("pg").textContent = "page " + (page+1) + "/" + pages.length;
+}
+function bpt(e){ const r=bcv.getBoundingClientRect(); return {x:e.clientX-r.left, y:e.clientY-r.top}; }
+function d2s(p,a,b){
+  const vx=b.x-a.x, vy=b.y-a.y, l2=vx*vx+vy*vy;
+  let t=l2?((p.x-a.x)*vx+(p.y-a.y)*vy)/l2:0; t=Math.max(0,Math.min(1,t));
+  return Math.hypot(p.x-(a.x+t*vx), p.y-(a.y+t*vy));
+}
+function markAt(p){
+  for(const s of pages[page]){
+    if(s.doomed) continue;
+    const reach = ERASER_R + s.w/2;
+    const hit = s.pts.length===1
+      ? Math.hypot(p.x-s.pts[0].x,p.y-s.pts[0].y)<=reach
+      : s.pts.some((_,i)=> i<s.pts.length-1 && d2s(p,s.pts[i],s.pts[i+1])<=reach);
+    if(hit) s.doomed = true;
+  }
+}
+bcv.addEventListener("pointerdown", e=>{
+  bcv.setPointerCapture(e.pointerId);
+  const p=bpt(e);
+  if(tool==="eraser"){ erasing=true; markAt(p); bdraw(); return; }
+  drawing=true; curStroke={w:2.2, pts:[p]}; pages[page].push(curStroke); bdraw();
+});
+bcv.addEventListener("pointermove", e=>{
+  hover=bpt(e);
+  if(erasing){ markAt(hover); bdraw(); return; }
+  if(!drawing){ if(tool==="eraser") bdraw(); return; }
+  const last=curStroke.pts[curStroke.pts.length-1];
+  if(Math.hypot(hover.x-last.x, hover.y-last.y)<1.1) return;
+  curStroke.pts.push(hover); bdraw();
+});
+addEventListener("pointerup", ()=>{
+  if(erasing){
+    const removed=[];
+    pages[page]=pages[page].filter((s,i)=>{ if(s.doomed){ delete s.doomed; removed.push({i,s}); return false; } return true; });
+    if(removed.length) undos[page].push({type:"erase", removed});
+    erasing=false; bdraw(); return;
+  }
+  if(drawing){ drawing=false; undos[page].push({type:"add"}); curStroke=null; }
+});
+$("pen").addEventListener("click", ()=>{ tool="pen"; $("pen").classList.add("on"); $("eraser").classList.remove("on"); bdraw(); });
+$("eraser").addEventListener("click", ()=>{ tool="eraser"; $("eraser").classList.add("on"); $("pen").classList.remove("on"); bdraw(); });
+$("undo").addEventListener("click", ()=>{
+  const op=undos[page].pop(); if(!op) return;
+  if(op.type==="add") pages[page].pop();
+  else for(const {i,s} of op.removed) pages[page].splice(i,0,s);
+  bdraw();
+});
+$("prev").addEventListener("click", ()=>{ if(page>0){ page--; bdraw(); } });
+$("next").addEventListener("click", ()=>{ page++; if(page>=pages.length){ pages.push([]); undos.push([]); } bdraw(); });
+$("closebook").addEventListener("click", ()=>toggleBook(false));
+
+function toggleBook(on){
+  bookOpen = on;
+  $("book").classList.toggle("show", on);
+  if(on) bfit();
+  ui();
+}
+addEventListener("keydown", e=>{
+  if(e.code==="Tab"){ e.preventDefault(); toggleBook(!bookOpen); }
+  if(e.code==="Escape" && bookOpen) toggleBook(false);
+});
+
+// ---------------- facility view ----------------
+const cv = $("cv"), ctx = cv.getContext("2d");
+function fit(){
+  const r=cv.getBoundingClientRect(), d=window.devicePixelRatio||1;
+  cv.width=Math.round(r.width*d); cv.height=Math.round(r.height*d);
+  ctx.setTransform(d,0,0,d,0,0);
+}
+addEventListener("resize", ()=>{ fit(); if(bookOpen) bfit(); });
+
+function draw(){
+  const w=cv.clientWidth, h=cv.clientHeight;
+  const sx=w/1120, sy=h/640, sc=Math.min(sx,sy);
+  const ox=(w-1120*sc)/2, oy=(h-640*sc)/2;
+  const P=(r)=>({x:r.x*sc+ox, y:r.y*sc+oy});
+  ctx.fillStyle="#14120e"; ctx.fillRect(0,0,w,h);
+  const open = phase==="open";
+
+  ctx.lineWidth=2;
+  R.forEach(a=>a.nb.forEach(b=>{ if(b<a.id) return;
+    const p1=P(a), p2=P(R[b]);
+    ctx.strokeStyle = open ? "#4a4335" : "#2a251d";
+    ctx.beginPath(); ctx.moveTo(p1.x,p1.y); ctx.lineTo(p2.x,p2.y); ctx.stroke();
+  }));
+
+  R.forEach(r=>{
+    const p=P(r), rad=27*sc;
+    const reach = open && R[player].nb.includes(r.id);
+    ctx.beginPath();
+    for(let i=0;i<6;i++){ const a=Math.PI/6+i*Math.PI/3;
+      const X=p.x+Math.cos(a)*rad, Y=p.y+Math.sin(a)*rad; i?ctx.lineTo(X,Y):ctx.moveTo(X,Y); }
+    ctx.closePath();
+    ctx.fillStyle = reach ? "rgba(95,211,154,.16)" : "#1d1a14";
+    ctx.fill();
+    ctx.lineWidth=2;
+    ctx.strokeStyle = r.id===entity ? "#ff4d3d" : r.id===player ? "#e8dcc4"
+                    : reach ? "#5fd39a" : "#2e2920";
+    ctx.stroke();
+    ctx.fillStyle = (reach||r.id===player||r.id===entity) ? "#e8dcc4" : "#8a7f6a";
+    ctx.textAlign="center"; ctx.textBaseline="middle";
+    ctx.font = "700 " + (15*sc) + "px ui-monospace,monospace";
+    ctx.fillText(r.glyph, p.x, p.y-2*sc);
+    ctx.font = "400 " + (8*sc) + "px ui-monospace,monospace"; ctx.fillStyle="#8a7f6a";
+    ctx.fillText(r.kind==="comms"?"UPLINK":r.kind==="codebook"?"CODEBOOK":"", p.x, p.y+11*sc);
+    if(r.id===target){ ctx.strokeStyle="#ffb545"; ctx.lineWidth=1.5;
+      ctx.beginPath(); ctx.arc(p.x,p.y,rad+6*sc,0,Math.PI*2); ctx.stroke(); }
+  });
+
+  const tag=(id,txt,col)=>{ const p=P(R[id]);
+    ctx.fillStyle=col; ctx.font="700 "+(9*sc)+"px ui-monospace,monospace";
+    ctx.fillText(txt,p.x,p.y+38*sc); };
+  tag(player,"YOU","#e8dcc4"); tag(entity,"ENTITY","#ff4d3d");
+}
+
+cv.addEventListener("click", e=>{
+  const r=cv.getBoundingClientRect();
+  const w=cv.clientWidth,h=cv.clientHeight, sc=Math.min(w/1120,h/640);
+  const ox=(w-1120*sc)/2, oy=(h-640*sc)/2;
+  const mx=e.clientX-r.left, my=e.clientY-r.top;
+  let hit=null;
+  R.forEach(rm=>{ const px=rm.x*sc+ox, py=rm.y*sc+oy;
+    if(Math.hypot(px-mx,py-my) < 30*sc) hit=rm.id; });
+  if(hit!==null) moveTo(hit);
+});
+
+// ---------------- ui ----------------
+function ui(){
+  const r=R[player];
+  $("room").innerHTML =
+    '<div class="row"><span>You are in</span><span>' + r.glyph + '</span></div>' +
+    (r.kind==="codebook"
+      ? '<div class="hint" style="margin-top:6px"><span class="kw">' + r.kw + '</span> = <b>' + r.code + '</b><br>' +
+        'Copy it into the notebook. Nothing else will remember it for you.</div>'
+      : r.kind==="comms"
+        ? '<div class="hint" style="margin-top:6px">The uplink. Stage the byte here, then send.</div>'
+        : '<div class="hint" style="margin-top:6px">Nothing here.</div>') +
+    '<div class="btns" style="margin-top:8px"><button id="bk">' +
+    (bookOpen ? "Close notebook" : "Open notebook (Tab)") + '</button></div>';
+  $("bk").addEventListener("click", ()=>toggleBook(!bookOpen));
+  renderRegister();
+  $("s-win").textContent=stats.win; $("s-ok").textContent=stats.ok;
+  $("s-bad").textContent=stats.bad; $("s-held").textContent=stats.held;
+}
+
+$("reset").addEventListener("click", reset);
+reset();
+// ?open=1 starts mid-window, for screenshots and for checking the open-doors state
+if(new URLSearchParams(location.search).get("open") === "1"){
+  phase = "open"; timer = WINDOW; ui(); draw();
+}
+requestAnimationFrame(tick);
+})();
+</script>
