@@ -12,8 +12,10 @@ ROOT = Path(__file__).parent.parent
 M = json.loads((ROOT / "out" / "metrics.json").read_text())
 E4 = M["e4_pursuit"]; E5 = M["e5_disruption"]
 E6U, E6S = M["e6_sabotage"], M["e6_sabotage_skewed"]
-R_CTL = E4["vomm"]["per_1000"] / E4["random-walk"]["per_1000"]
-R_HUB = E4["vomm"]["per_1000"] / E4["hub-camp"]["per_1000"]
+E7 = M["e7_scaling"]
+R_CTL = E4["vomm-intercept"]["per_1000"] / E4["random-walk"]["per_1000"]
+R_HUB = E4["vomm-intercept"]["per_1000"] / E4["hub-camp"]["per_1000"]
+SIZES = sorted(int(k) for k in E7)
 
 INK, MUT, ACC, LINE, BG = C(0x16,0x18,0x1a), C(0x6b,0x71,0x78), C(0x2a,0x78,0xd6), C(0xd8,0xdc,0xe0), C(0xfc,0xfc,0xfb)
 GRN, ORG = C(0x1b,0xaf,0x7a), C(0xeb,0x68,0x34)
@@ -119,7 +121,7 @@ table(s, [
     ["Literature review (min. 15 recent papers)", "Sections 4–7", "22 works, 20 from 2023 or later"],
     ["Design of proposed methodology", "Sections 8–11", "Formal model + evaluation protocol"],
     ["Module description / system design", "Sections 12–13", "8 modules, implemented and tested"],
-    ["Beyond the rubric", "Sections 14–21", "Six experiments, 9 invariants, a live demo"],
+    ["Beyond the rubric", "Sections 14–22", "Seven experiments, 9 invariants, a live demo"],
 ], col_w=[4.3, 4.0, 3.6], size=12.5)
 
 # ---------------------------------------------------------------- 3 domain
@@ -274,10 +276,10 @@ tb(s, 0.72, 1.95, 11.9, 0.5,
    size=14.5, color=MUT, line=1.3)
 table(s, [
     ["Counter-move", "Trigger", "Status"],
-    ["Intercept", "High confidence on a specific room — move to meet the player there", "Measured (§14, 16)"],
-    ["Rewire a room ahead", "High confidence on a route — change it before they arrive", "Measured (§17)"],
-    ["Seal a shortcut", "An edge with high traversal frequency", "Measured (§17)"],
-    ["Poison a codebook", "A recorded entry the player is predicted to need again", "Measured (§18)"],
+    ["Intercept", "Rolls the model forward; meets the player where they will be", "Measured (§16, 17)"],
+    ["Rewire a room ahead", "High confidence on a route — change it before they arrive", "Measured (§18)"],
+    ["Seal a shortcut", "An edge with high traversal frequency", "Measured (§18)"],
+    ["Poison a codebook", "A recorded entry the player is predicted to need again", "Measured (§19)"],
 ], y=2.85, col_w=[2.8, 6.9, 2.2], size=12.5)
 tb(s, 0.72, 4.95, 11.9, 0.35, "FAIRNESS CONSTRAINTS", size=10.5, bold=True, color=ORG)
 bullets(s, [
@@ -345,16 +347,26 @@ tb(s, 0.72, 6.6, 11.9, 0.6,
    "moves — under a minute of play.", size=13, color=MUT, line=1.3)
 
 s = slide(); header(s, "16 · Results — does prediction matter?", "Embodied pursuit: the entity must intercept, not teleport")
-picture(s, "fig_capture.png", 1.87, 1.95, 9.6)
-tb(s, 0.72, 6.42, 11.9, 0.85,
-   "The hub-camping baseline is included deliberately: a model that cannot beat 'sit in the busiest room' has not "
-   f"earned its complexity. The proposed director achieves {R_CTL:.1f}× the control and {R_HUB:.1f}× the strongest "
-   "non-learning heuristic.",
-   size=13, color=MUT, line=1.3)
+picture(s, "fig_capture.png", 2.37, 1.88, 8.6)
+tb(s, 0.72, 6.25, 11.9, 1.0,
+   "A one-step director aims at the room you enter next — but the entity moves one room per step too, so it "
+   "chases a step behind forever. The interceptor rolls the model forward five steps and picks the earliest room "
+   f"it can reach no later than you. Same model, used properly: {R_CTL:.1f}× the control, {R_HUB:.1f}× hub-camping.",
+   size=12.5, color=MUT, line=1.3)
+
+
+# ---------------------------------------------------------------- scaling
+s = slide(); header(s, "17 · Results — does the advantage hold at scale?", "Hub-camping only looks good on a small map")
+picture(s, "fig_scaling.png", 2.5, 1.85, 8.4)
+tb(s, 0.72, 6.15, 11.9, 1.0,
+   f"On {SIZES[0]} rooms with one dominant junction the player has nowhere else to go, so a naive heuristic looks "
+   f"competitive for reasons unrelated to intelligence. As the facility grows, hub-camping decays fastest and the "
+   f"interceptor's advantage widens from {E7[str(SIZES[0])]['advantage_vs_hub']:.2f}× to {E7[str(SIZES[-1])]['advantage_vs_hub']:.2f}×. "
+   "The small-facility result understates the value of prediction.", size=12.5, color=MUT, line=1.3)
 
 
 # ---------------------------------------------------------------- world edits
-s = slide(); header(s, "17 · Results — do the world edits matter?", "Interception is only one of four counter-moves")
+s = slide(); header(s, "18 · Results — do the world edits matter?", "Interception is only one of four counter-moves")
 picture(s, "fig_disruption.png", 2.5, 1.9, 8.4)
 tb(s, 0.72, 6.05, 11.9, 1.1,
    f"The entity is removed entirely here, isolating topology mutation. Sealing and rewiring ahead of the player "
@@ -364,7 +376,7 @@ tb(s, 0.72, 6.05, 11.9, 1.1,
    "check — no run was ever soft-locked.", size=13, color=MUT, line=1.3)
 
 # ---------------------------------------------------------------- conditional result
-s = slide(); header(s, "18 · Results — is the sabotage aimed?", "A conditional result, reported as such")
+s = slide(); header(s, "19 · Results — is the sabotage aimed?", "A conditional result, reported as such")
 tb(s, 0.72, 1.95, 11.9, 0.6,
    "A poisoned codebook only costs the player if they return to it, and costs more the sooner they do. "
    "Lower is better-aimed. Control: poison a recorded room at random.", size=14, color=MUT, line=1.3)
@@ -388,7 +400,7 @@ tb(s, 1.05, 4.55, 11.3, 1.35,
    size=13.5, line=1.32, space=4)
 
 # ---------------------------------------------------------------- verification
-s = slide(); header(s, "19 · Verification", "Nine invariants, asserted over 25 generated facilities")
+s = slide(); header(s, "20 · Verification", "Nine invariants, asserted over 25 generated facilities")
 table(s, [
     ["Invariant", "Guards against"],
     ["Facility connected on construction", "Unplayable generated levels"],
@@ -405,7 +417,7 @@ tb(s, 0.72, 6.35, 11.9, 0.5, "9 / 9 passing  ·  python3 model/test_invariants.p
    size=14, bold=True, color=GRN)
 
 # ---------------------------------------------------------------- 20 demo
-s = slide(); header(s, "20 · Live demonstration", "The full loop, running")
+s = slide(); header(s, "21 · Live demonstration", "The full loop, running")
 bullets(s, [
     ("Room graph —", "live per-room predicted probabilities drawn on the facility."),
     ("Entity —", "moves to intercept where the model points, gated on confidence."),
@@ -425,7 +437,7 @@ tb(s, 1.05, 5.24, 11.3, 1.1,
 
 
 # ---------------------------------------------------------------- 21 roadmap
-s = slide(); header(s, "21 · Roadmap", "Three of six milestones complete")
+s = slide(); header(s, "22 · Roadmap", "Three of six milestones complete")
 table(s, [
     ["Milestone", "Deliverable", "State"],
     ["M0", "Headless simulation core, telemetry, bot harness", "Complete"],

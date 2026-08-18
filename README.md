@@ -64,7 +64,13 @@ Embodied pursuit — an entity that occupies a room and moves one room per step:
 | Random walk *(control)* | 99 |
 | Camp the busiest junction | 305 |
 | Order-1 Markov director | 350 |
-| **VOMM director** | **364** |
+| VOMM, one-step targeting | 364 |
+| **VOMM interceptor** | **390** |
+
+The interceptor rolls the model forward five steps and picks the earliest predicted
+room it can reach no later than the player, rather than aiming at the next room it
+cannot reach in time. The advantage over hub-camping widens with facility size —
+1.30x at 10 rooms, 1.57x at 32 — so the small-facility number understates it.
 
 World editing, with the entity removed so topology mutation is isolated:
 

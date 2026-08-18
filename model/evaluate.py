@@ -17,7 +17,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from facility import Facility
 from bots import HabitualBot, ExplorerBot, RandomBot
 from predictors import UniformNeighbour, MarkovOrder1, VOMM
-from director import ModelDirector, RandomAmbush, DegreeCamp, FullDirector
+from director import ModelDirector, RandomAmbush, DegreeCamp, FullDirector, InterceptDirector
 
 BOTS = {"habitual": HabitualBot, "explorer": ExplorerBot, "random": RandomBot}
 STEPS, SEEDS, CTX = 1200, 12, 8
@@ -143,13 +143,15 @@ def e4_pursuit(bot_name="habitual"):
     """
     from bots import _bfs_path
     out = {}
-    for label in ("random-walk", "hub-camp", "markov-1", "vomm"):
+    for label in ("random-walk", "hub-camp", "markov-1", "vomm", "vomm-intercept"):
         rates = []
         for seed in range(SEEDS):
             fac = Facility(10, seed=seed)
             bot = BOTS[bot_name](fac, seed=seed + 100)
             rng = random.Random(seed + 31)
-            model = _make_model(label) if label in ("markov-1", "vomm") else None
+            model = _make_model("vomm" if label == "vomm-intercept" else label) \
+                if label in ("markov-1", "vomm", "vomm-intercept") else None
+            icept = InterceptDirector(model, fac) if label == "vomm-intercept" else None
             hub = max(fac.rooms, key=lambda r: len(fac.neighbors(r)))
             epos = rng.choice(list(fac.rooms))
             hist, caught, n = [bot.pos], 0, 0
@@ -161,6 +163,8 @@ def e4_pursuit(bot_name="habitual"):
                     target = rng.choice(fac.neighbors(epos)) if fac.neighbors(epos) else epos
                 elif label == "hub-camp":
                     target = hub
+                elif icept is not None:
+                    target = icept.choose_target(hist[-CTX:], hist[-1], epos) or epos
                 else:
                     dist = model.predict(hist[-CTX:], cands)
                     target = max(dist.items(), key=lambda kv: kv[1])[0]
@@ -275,6 +279,63 @@ def e6_sabotage_precision(bot_name="habitual", steps=1500, cap=80, skew=False):
     return out
 
 
+
+def e7_scaling(sizes=(10, 16, 24, 32), seeds=8, steps=1200):
+    """How does the value of prediction change with the size of the facility?
+
+    Motivation: on a small graph with one dominant junction, "camp the busiest
+    room" is a surprisingly strong strategy -- not because it is clever, but
+    because the player has nowhere else to go. As the facility grows, that
+    heuristic decays while a predictive interceptor should hold up. This measures
+    whether that is actually true.
+    """
+    from bots import _bfs_path
+    out = {}
+    for n in sizes:
+        row = {}
+        for label in ("random-walk", "hub-camp", "markov-1", "vomm-intercept"):
+            rates = []
+            for seed in range(seeds):
+                fac = Facility(n, seed=seed)
+                bot = BOTS["habitual"](fac, seed=seed + 100)
+                rng = random.Random(seed + 31)
+                hub = max(fac.rooms, key=lambda r: len(fac.neighbors(r)))
+                model = (MarkovOrder1() if label == "markov-1"
+                         else VOMM() if label == "vomm-intercept" else None)
+                icept = InterceptDirector(model, fac) if label == "vomm-intercept" else None
+                epos = rng.choice(list(fac.rooms))
+                hist, caught, cnt = [bot.pos], 0, 0
+                for _ in range(steps):
+                    cands = fac.neighbors(hist[-1])
+                    if not cands:
+                        break
+                    if label == "random-walk":
+                        nbs = fac.neighbors(epos)
+                        target = rng.choice(nbs) if nbs else epos
+                    elif label == "hub-camp":
+                        target = hub
+                    elif icept is not None:
+                        target = icept.choose_target(hist[-CTX:], hist[-1], epos) or epos
+                    else:
+                        d = model.predict(hist[-CTX:], cands)
+                        target = max(d.items(), key=lambda kv: kv[1])[0]
+                    path = _bfs_path(fac, epos, target)
+                    epos = path[1] if len(path) > 1 else epos
+                    actual = bot.step(); bot.resync(actual); cnt += 1
+                    if actual == epos:
+                        caught += 1
+                        actual = rng.choice(list(fac.rooms)); bot.resync(actual)
+                        epos = rng.choice(list(fac.rooms))
+                    if model is not None:
+                        model.observe(hist[-CTX:], actual)
+                    hist.append(actual)
+                rates.append(1000.0 * caught / cnt)
+            row[label] = statistics.mean(rates)
+        row["advantage_vs_hub"] = row["vomm-intercept"] / row["hub-camp"]
+        out[str(n)] = row
+    return out
+
+
 def main():
     res = {
         "config": {"rooms": 10, "steps": STEPS, "seeds": SEEDS, "context": CTX},
@@ -285,6 +346,7 @@ def main():
         "e5_disruption": e5_disruption(),
         "e6_sabotage": e6_sabotage_precision(),
         "e6_sabotage_skewed": e6_sabotage_precision(skew=True),
+        "e7_scaling": e7_scaling(),
     }
     out = Path(__file__).parent.parent / "out"
     out.mkdir(exist_ok=True)
@@ -294,7 +356,8 @@ def main():
     print("E4 embodied  :", json.dumps(res["e4_pursuit"]))
     print("E5 disruption:", json.dumps(res["e5_disruption"], indent=2))
     print("E6 uniform reliance:", json.dumps(res["e6_sabotage"]))
-    print("E6 uneven reliance :", json.dumps(res["e6_sabotage_skewed"], indent=2))
+    print("E6 uneven reliance :", json.dumps(res["e6_sabotage_skewed"]))
+    print("E7 scaling    :", json.dumps(res["e7_scaling"], indent=2))
     return res
 
 

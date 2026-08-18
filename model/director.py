@@ -173,3 +173,62 @@ class FullDirector:
         self.last_edit = t
         self.log.append({"t": t, "action": kind, "arg": arg, "confidence": round(conf, 3)})
         return kind
+
+
+class InterceptDirector:
+    """Aims where the player WILL be when it can get there, not where they go next.
+
+    A one-step director targets the room it expects the player to enter next. But
+    the entity moves one room per step too, so that room is usually unreachable in
+    time -- it perpetually chases a step behind. This version rolls the model
+    forward k steps and picks the earliest predicted room the entity can actually
+    reach no later than the player does, weighting by how confident the model is
+    that the player will be there.
+    """
+
+    def __init__(self, model, fac, depth: int = 5, gate: float = 0.0):
+        self.model, self.fac, self.depth, self.gate = model, fac, depth, gate
+        self.name = f"intercept[{model.name}]"
+
+    def _dist_from(self, src):
+        d = {src: 0}
+        q = [src]
+        while q:
+            cur = q.pop(0)
+            for nb in self.fac.neighbors(cur):
+                if nb not in d:
+                    d[nb] = d[cur] + 1
+                    q.append(nb)
+        return d
+
+    def predicted_path(self, history, player):
+        """Roll the model forward, carrying the probability of staying on it."""
+        path, hist, cur, p = [], list(history), player, 1.0
+        for _ in range(self.depth):
+            c = self.fac.neighbors(cur)
+            if not c:
+                break
+            d = self.model.predict(hist, c)
+            nxt, pr = max(d.items(), key=lambda kv: kv[1])
+            p *= pr
+            cur = nxt
+            path.append((cur, p))
+            hist = hist + [cur]
+        return path
+
+    def choose_target(self, history, player, entity):
+        path = self.predicted_path(history, player)
+        if not path:
+            return None
+        ed = self._dist_from(entity)
+        best, best_score = None, -1.0
+        for step, (room, p) in enumerate(path, start=1):
+            reach = ed.get(room)
+            if reach is None or reach > step:
+                continue                      # cannot be there in time
+            score = p / step                  # sooner and likelier is better
+            if score > best_score:
+                best, best_score = room, score
+        if best is None:
+            best = max(path, key=lambda rp: rp[1])[0]
+        return best if best_score >= self.gate or best_score < 0 else best

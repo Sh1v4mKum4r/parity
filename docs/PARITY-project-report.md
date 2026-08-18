@@ -210,7 +210,7 @@ than fear (§2.5). Three hard invariants:
 3. **Solvability invariant** — every topology mutation is checked for graph
    connectivity and objective reachability, and reverted if it would soft-lock the
    run. Both mutation operators revert any edit that fails this check, and the
-   property is asserted over 25 generated facilities in the invariant suite (§5.6).
+   property is asserted over 25 generated facilities in the invariant suite (§5.7).
 
 Notably, **no signal is emitted when sabotage occurs.** The player's hand-kept
 notebook is the only means of detecting it. Sabotage nonetheless lands almost
@@ -352,15 +352,46 @@ Embodied pursuit: the entity occupies a room and moves one room per step — it 
 | Random walk *(control)* | 99 |
 | Camp the busiest junction *(strong non-learning heuristic)* | 305 |
 | Order-1 Markov director | 350 |
-| **VOMM director (proposed)** | **364** |
+| VOMM, one-step targeting | 364 |
+| **VOMM interceptor (proposed)** | **390** |
 
 ![Captures per 1000 moves by entity behaviour](../out/fig_capture.png)
+
+**Two directors are separated here.** A one-step director targets the room it
+expects the player to enter next — but the entity also moves one room per step, so
+that room is usually unreachable in time and it chases perpetually one step behind.
+The interceptor instead rolls the model forward up to five steps and picks the
+earliest predicted room it can reach no later than the player does, weighted by the
+probability the player stays on that path. The same model, used properly, is worth
+26 more captures per 1000 moves.
 
 The hub-camping baseline is included deliberately: a model that cannot beat "sit in
 the busiest room" has not earned its complexity. The proposed director achieves
 **3.7× the control** and **1.2× the strongest non-learning heuristic**.
 
-### 5.4 Do the world-editing counter-moves matter?
+### 5.4 How much is prediction worth as the facility grows?
+
+Hub-camping performs suspiciously well on a small graph. The suspicion is
+well-founded: on ten rooms with one dominant junction the player has nowhere else
+to go, so a naive heuristic looks competitive for reasons that have nothing to do
+with intelligence. This experiment tests whether that advantage survives scale.
+
+![Captures per 1000 moves against facility size](../out/fig_scaling.png)
+
+| Rooms | Random *(control)* | Camp the hub | Order-1 Markov | **VOMM interceptor** | Advantage over hub |
+|---|---|---|---|---|---|
+| 10 | 103 | 298 | 340 | **389** | 1.30× |
+| 16 | 57 | 255 | 297 | **336** | 1.32× |
+| 24 | 38 | 165 | 205 | **256** | 1.55× |
+| 32 | 31 | 140 | 194 | **220** | 1.57× |
+
+Every strategy captures less on a larger map, as expected — the player has more
+places to be. But hub-camping decays fastest, and **the interceptor's advantage over
+it widens from 1.30× to 1.57×**. The honest reading of
+§5.3 is therefore that the ten-room result *understates* the value of prediction:
+the smaller the space, the less there is to predict.
+
+### 5.5 Do the world-editing counter-moves matter?
 
 Interception is only one of the Director's four moves. This experiment removes the
 entity entirely and isolates topology mutation: the player cycles objective rooms
@@ -378,7 +409,7 @@ A **60% increase in the cost of completing an objective**, from
 12 seeds. Every one of those mutations passed the connectivity and reachability
 check, so no run was ever soft-locked.
 
-### 5.5 Is sabotage aimed, or is it noise? *(a conditional result)*
+### 5.6 Is sabotage aimed, or is it noise? *(a conditional result)*
 
 A poisoned codebook only costs the player if they return to it, and costs them more
 the sooner they do. We measure moves elapsed before the player walks back into a
@@ -396,7 +427,7 @@ model-guided targeting performs no better than random. The counter-move only ear
 its place against a player with uneven habits — which is the realistic case, but the
 claim is conditional and should not be overstated.
 
-### 5.6 Invariant test suite
+### 5.7 Invariant test suite
 
 Nine invariants are asserted over 25 generated facilities and thousands of simulated
 moves (`model/test_invariants.py`, all passing):
@@ -413,7 +444,7 @@ moves (`model/test_invariants.py`, all passing):
 | Director never mutates a visible room | Fairness rule 1 |
 | Director never edits below its confidence gate | Fairness rule 2 |
 
-### 5.7 Interactive demonstration
+### 5.8 Interactive demonstration
 
 A browser demo runs the full loop live: room graph, per-room predicted
 probabilities, an entity that intercepts on prediction, codebook recording, and all

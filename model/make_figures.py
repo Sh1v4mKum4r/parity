@@ -72,13 +72,16 @@ def fig_learning(out):
 
 
 def fig_capture(out):
-    order = ["random-walk", "hub-camp", "markov-1", "vomm"]
+    order = ["random-walk", "hub-camp", "markov-1", "vomm", "vomm-intercept"]
     nice = {"random-walk": "Random walk (control)", "hub-camp": "Camp the busiest junction",
-            "markov-1": "Order-1 Markov director", "vomm": "VOMM director (proposed)"}
+            "markov-1": "Order-1 Markov director", "vomm": "VOMM, one-step targeting",
+            "vomm-intercept": "VOMM interceptor (proposed)"}
     vals = [M["e4_pursuit"][k]["per_1000"] for k in order]
-    fig, ax = plt.subplots(figsize=(8.2, 3.6))
+    fig, ax = plt.subplots(figsize=(8.2, 4.0))
     ypos = range(len(order))
-    ax.barh(list(ypos), vals, height=0.55, color="#2a78d6", zorder=3)
+    cols = ["#2a78d6"] * len(order)
+    cols[order.index("vomm")] = "#8fb9e8"          # the naive variant, same hue, lighter
+    ax.barh(list(ypos), vals, height=0.55, color=cols, zorder=3)
     for y, v in zip(ypos, vals):
         ax.text(v + 6, y, f"{v:.0f}", va="center", fontsize=9.5, color=INK)
     ax.set_yticks(list(ypos)); ax.set_yticklabels([nice[k] for k in order], fontsize=9.5)
@@ -112,10 +115,36 @@ def fig_disruption(out):
     fig.tight_layout(); fig.savefig(out, dpi=200); plt.close(fig)
 
 
+def fig_scaling(out):
+    E = M["e7_scaling"]
+    sizes = sorted(int(k) for k in E)
+    series = [
+        ("vomm-intercept", "VOMM interceptor", "#2a78d6"),
+        ("markov-1",       "Order-1 Markov",   "#eb6834"),
+        ("hub-camp",       "Camp the hub",     "#1baf7a"),
+        ("random-walk",    "Random (control)", "#9aa3ab"),
+    ]
+    fig, ax = plt.subplots(figsize=(8.2, 4.3))
+    for key, label, col in series:
+        ys = [E[str(n)][key] for n in sizes]
+        ax.plot(sizes, ys, color=col, lw=2, marker="o", ms=5, zorder=3)
+        ax.text(sizes[-1] + 0.8, ys[-1], label, color=col, fontsize=9, va="center")
+    ax.set_xlabel("Rooms in the facility"); ax.set_ylabel("Captures per 1000 player moves")
+    ax.set_xticks(sizes); ax.set_xlim(sizes[0] - 1, sizes[-1] + 11)
+    ax.set_ylim(0, max(E[str(sizes[0])].values()) * 1.12)
+    ax.grid(axis="y", color=GRID, lw=0.8, zorder=0); ax.set_axisbelow(True)
+    lo = E[str(sizes[0])]["advantage_vs_hub"]; hi = E[str(sizes[-1])]["advantage_vs_hub"]
+    _finish(ax, "Prediction matters more as the facility grows",
+            f"Advantage over hub-camping widens from {lo:.2f}x to {hi:.2f}x. "
+            "Habitual player, 1200 moves x 8 seeds per point")
+    fig.tight_layout(); fig.savefig(out, dpi=200); plt.close(fig)
+
+
 if __name__ == "__main__":
     out = ROOT / "out"; out.mkdir(exist_ok=True)
     fig_accuracy(out / "fig_accuracy.png")
     fig_learning(out / "fig_learning.png")
     fig_capture(out / "fig_capture.png")
     fig_disruption(out / "fig_disruption.png")
+    fig_scaling(out / "fig_scaling.png")
     print("figures written:", *[p.name for p in sorted(out.glob("*.png"))])
