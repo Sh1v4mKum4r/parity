@@ -12,7 +12,7 @@ ROOT = Path(__file__).parent.parent
 M = json.loads((ROOT / "out" / "metrics.json").read_text())
 E4 = M["e4_pursuit"]; E5 = M["e5_disruption"]
 E6U, E6S = M["e6_sabotage"], M["e6_sabotage_skewed"]
-E7 = M["e7_scaling"]
+E7 = M["e7_scaling"]; E8 = M["e8_waiting"]
 R_CTL = E4["vomm-intercept"]["per_1000"] / E4["random-walk"]["per_1000"]
 R_HUB = E4["vomm-intercept"]["per_1000"] / E4["hub-camp"]["per_1000"]
 SIZES = sorted(int(k) for k in E7)
@@ -121,7 +121,7 @@ table(s, [
     ["Literature review (min. 15 recent papers)", "Sections 4–7", "22 works, 20 from 2023 or later"],
     ["Design of proposed methodology", "Sections 8–11", "Formal model + evaluation protocol"],
     ["Module description / system design", "Sections 12–13", "8 modules, implemented and tested"],
-    ["Beyond the rubric", "Sections 14–22", "Seven experiments, 9 invariants, a live demo"],
+    ["Beyond the rubric", "Sections 14–23", "Eight experiments, 9 invariants, a live demo"],
 ], col_w=[4.3, 4.0, 3.6], size=12.5)
 
 # ---------------------------------------------------------------- 3 domain
@@ -238,7 +238,9 @@ tb(s, 1.0, 5.98, 11.3, 0.7,
 s = slide(); header(s, "8 · Methodology — formalisation", "Prediction over a room graph")
 bullets(s, [
     ("", "The facility is an undirected graph G = (V, E): rooms are vertices, doors are edges. The player produces a trajectory h = (v₁, v₂, …, vₜ)."),
-    ("Prediction task —", "given h and the candidate set N(vₜ), estimate  P(v(t+1) = c | h)  for each adjacent room c."),
+    ("The clock —", "lockdown, then a short window when every door unlocks, then lockdown. Decisions happen only at windows. Sealed in between, the player draws, copies codebooks and stages the register — in real time."),
+    ("Prediction task —", "at each window the player takes a door OR declines to move. Estimate P(v(t+1) = c | h) over N(vₜ) ∪ {vₜ}."),
+    ("Staying is a first-class action —", "not the absence of one. Players linger where there is something to record, so dwell is informative. The antagonist obeys the same clock, so lockdown is safe and all danger is at the window."),
 ], size=15)
 box = s.shapes.add_shape(1, In(0.72), In(3.45), In(11.9), In(2.05))
 box.fill.solid(); box.fill.fore_color.rgb = C(0xf4,0xf6,0xf8); box.line.fill.background(); box.shadow.inherit = False
@@ -296,8 +298,9 @@ table(s, [
     ["Scripted player", "Models", "Expected result"],
     ["HabitualBot", "A player who has learned the level and runs routes", "Model should win decisively"],
     ["ExplorerBot", "A first-time player sweeping systematically", "Model should win"],
-    ["RandomBot", "Uniform over neighbours — no habit at all", "Model MUST NOT beat baseline"],
-], y=2.75, col_w=[2.7, 5.7, 3.5], size=13)
+    ["EvasiveBot", "Declines 35% of windows on purpose to break the pattern", "The player's counter-play"],
+    ["RandomBot", "Uniform over doors and staying — no habit at all", "Model MUST NOT beat baseline"],
+], y=2.75, col_w=[2.6, 5.9, 3.4], size=12.5)
 box = s.shapes.add_shape(1, In(0.72), In(4.55), In(11.9), In(1.45))
 box.fill.solid(); box.fill.fore_color.rgb = C(0xf1,0xf6,0xfc); box.line.color.rgb = ACC
 box.line.width = Pt(1); box.shadow.inherit = False
@@ -348,11 +351,11 @@ tb(s, 0.72, 6.6, 11.9, 0.6,
 
 s = slide(); header(s, "16 · Results — does prediction matter?", "Embodied pursuit: the entity must intercept, not teleport")
 picture(s, "fig_capture.png", 2.37, 1.88, 8.6)
-tb(s, 0.72, 6.25, 11.9, 1.0,
-   "A one-step director aims at the room you enter next — but the entity moves one room per step too, so it "
-   "chases a step behind forever. The interceptor rolls the model forward five steps and picks the earliest room "
-   f"it can reach no later than you. Same model, used properly: {R_CTL:.1f}× the control, {R_HUB:.1f}× hub-camping.",
-   size=12.5, color=MUT, line=1.3)
+tb(s, 0.72, 6.22, 11.9, 1.05,
+   f"Any model-driven antagonist beats the non-learning ones — {R_CTL:.1f}× the random control and {R_HUB:.1f}× hub-camping. "
+   "But the models are within noise of each other, and five-step lookahead is now slightly WORSE than one-step: at "
+   "61% single-step accuracy, rollout error compounds faster than the extra foresight pays. Lookahead helps an "
+   "accurate model and hurts an uncertain one.", size=12, color=MUT, line=1.28)
 
 
 # ---------------------------------------------------------------- scaling
@@ -399,8 +402,34 @@ tb(s, 1.05, 4.55, 11.3, 1.35,
    "habits. That is the realistic case — but the claim is conditional and is not overstated.",
    size=13.5, line=1.32, space=4)
 
+# ---------------------------------------------------------------- waiting
+s = slide(); header(s, "20 · Results — can the player fight back?", "A negative result, and the most useful one")
+tb(s, 0.72, 1.95, 11.9, 0.55,
+   "Waiting is the natural counter-play: if it moves to where you are going, do not go. A fair adaptive "
+   "antagonist must be beatable this way. It is not.", size=14, color=MUT, line=1.3)
+table(s, [
+    ["Player", "Windows declined", "Model accuracy against them", "Captures / 1000"],
+    ["Habitual", f"{E8['habitual']['windows_declined_pct']:.0f}%",
+     f"{E8['habitual']['top1_accuracy']*100:.1f}%", f"{E8['habitual']['per_1000']:.0f}"],
+    ["Evasive", f"{E8['evasive']['windows_declined_pct']:.0f}%",
+     f"{E8['evasive']['top1_accuracy']*100:.1f}%", f"{E8['evasive']['per_1000']:.0f}"],
+], y=2.75, col_w=[2.6, 3.0, 3.6, 2.7], size=13)
+box = s.shapes.add_shape(1, In(0.72), In(4.15), In(11.9), In(2.15))
+box.fill.solid(); box.fill.fore_color.rgb = C(0xff,0xf6,0xf0); box.line.color.rgb = ORG
+box.line.width = Pt(1); box.shadow.inherit = False
+tb(s, 1.05, 4.40, 11.3, 1.75,
+   "Evasion beats the model and loses to the outcome.\n"
+   f"Declining a third of all windows costs the predictor {(E8['habitual']['top1_accuracy']-E8['evasive']['top1_accuracy'])*100:.1f} points of accuracy but reduces capture "
+   f"risk by only {E8['evasive']['risk_reduction_pct']:.1f}%. The cause is the observation model, not the algorithm: the antagonist currently "
+   "sees the player perfectly at every window, and under perfect observation standing still cannot conceal you — "
+   "it only makes you a stationary target.\n"
+   "Next iteration: sense the player through motion detectors on the doors instead of omniscience, turning this "
+   "into a partially-observed prediction problem. This experiment is what identified that.",
+   size=13, line=1.3, space=5)
+
+
 # ---------------------------------------------------------------- verification
-s = slide(); header(s, "20 · Verification", "Nine invariants, asserted over 25 generated facilities")
+s = slide(); header(s, "21 · Verification", "Nine invariants, asserted over 25 generated facilities")
 table(s, [
     ["Invariant", "Guards against"],
     ["Facility connected on construction", "Unplayable generated levels"],
@@ -417,12 +446,13 @@ tb(s, 0.72, 6.35, 11.9, 0.5, "9 / 9 passing  ·  python3 model/test_invariants.p
    size=14, bold=True, color=GRN)
 
 # ---------------------------------------------------------------- 20 demo
-s = slide(); header(s, "21 · Live demonstration", "The full loop, running")
+s = slide(); header(s, "22 · Live demonstration", "The full loop, running")
 bullets(s, [
     ("Room graph —", "live per-room predicted probabilities drawn on the facility."),
     ("Entity —", "moves to intercept where the model points, gated on confidence."),
     ("Codebooks and notebook —", "record entries; the Director silently poisons what you rely on."),
     ("All four counter-moves —", "intercept, seal, rewire and poison, with a live counter for each."),
+    ("Hold position —", "decline the window and stay put, exactly as the model expects you might."),
     ("Live scoreboard —", "running VOMM accuracy against a no-model control, side by side."),
     ("Learned-rule readout —", "in plain language: 'from E you go to B, 100% of the time, 13 observations'."),
 ], size=15)
@@ -430,14 +460,14 @@ box = s.shapes.add_shape(1, In(0.72), In(5.0), In(11.9), In(1.5))
 box.fill.solid(); box.fill.fore_color.rgb = C(0xf1,0xf6,0xfc); box.line.color.rgb = ACC
 box.line.width = Pt(1); box.shadow.inherit = False
 tb(s, 1.05, 5.24, 11.3, 1.1,
-   "Observed in a 126-move automated session\n"
-   "VOMM 74%  vs.  no-model 48%.  The Director sealed 2 doors, rewired 4 rooms and poisoned 10 codebooks — "
-   "corrupting 4 of 19 transmitted signals. The player was never told about any of it.",
+   "Observed in a 102-window automated session\n"
+   "The player declined 32 windows (31%) to finish pages. VOMM 47% vs. no-model 36%, 22 interceptions, and 2 of "
+   "13 signals corrupted. The confidence gate is visible live: 'too unsure to intercept; hunting conventionally'.",
    size=15, line=1.4, space=4)
 
 
 # ---------------------------------------------------------------- 21 roadmap
-s = slide(); header(s, "22 · Roadmap", "Three of six milestones complete")
+s = slide(); header(s, "23 · Roadmap", "Three of nine milestones complete")
 table(s, [
     ["Milestone", "Deliverable", "State"],
     ["M0", "Headless simulation core, telemetry, bot harness", "Complete"],
@@ -446,7 +476,10 @@ table(s, [
     ["M3", "Godot greybox first-person build + live prediction overlay", "Next"],
     ["M4", "Notebook vector editor and persistence", "Planned"],
     ["M5", "Entity polish, atmosphere, audio, human playtest", "Planned"],
-], col_w=[1.3, 8.4, 2.2], size=13)
+    ["M6", "Door motion-sensors — partial observation, so waiting conceals", "Specified"],
+    ["M7", "Polygonal room tiles; side count is the difficulty setting", "Specified"],
+    ["M8", "Outbound register with pre-send tampering; sensor blackouts", "Specified"],
+], col_w=[1.3, 8.4, 2.2], size=12.5)
 tb(s, 0.72, 5.1, 11.9, 1.2,
    "Art direction for M3 is settled: a low-poly modular brutalist kit instantiated from the room graph, "
    "near-total darkness with a flashlight, heavy fog, and a retro post-processing pass — chosen because it "
@@ -495,76 +528,74 @@ for i, chunk in enumerate([refs, refs2]):
 
 # ---------------------------------------------------------------- speaker notes
 NOTES = {
- 1: "Open with the one-sentence pitch: a horror antagonist that builds a live behavioural "
-    "model of the individual player and acts on its predictions. The model is the project; "
-    "the game is what makes it legible.",
- 2: "Use this to tell the panel exactly where each rubric item is answered. Don't linger.",
- 3: "Point: game AI research optimises for agents that PLAY well. Adapting to the specific "
-    "person is a different and less-solved problem. Horror is where it matters most because "
-    "the genre dies when the player learns it.",
- 4: "The core argument. Static AI is learnable and stops scaring. Random AI is unlearnable "
-    "and feels unfair. Neither adapts to you. If asked 'isn't this just DDA?' — no: DDA tunes "
-    "difficulty magnitude, this changes WHERE the antagonist chooses to be.",
- 5: "Seven objectives, six complete. Be explicit that O8 (the Godot build) is not done — do "
-    "not let them think a 3D game exists.",
- 6: "22 works, 20 from 2023 or later. Say the selection criteria out loud: player behaviour "
-    "prediction, runtime adaptation, or discrete-trajectory prediction.",
- 7: "Do not read the table. Pick two: Romeo (closest analogue, adapts encounters via RL) and "
-    "Lopes (systematic review that names evaluation as the field's weak point — which is the "
-    "gap my bot harness addresses).",
- 8: "Begleiter is the one to name aloud — it is the formal basis of the model. If asked why a "
-    "2004 paper is in a 'recent papers' review: it is the foundational treatment of variable-"
-    "order Markov prediction, and the four 2025 trajectory-prediction papers beside it are the "
-    "modern line of work.",
- 9: "The heart of the literature section. Three gaps: DDA adapts parameters not position; "
-    "trajectory prediction is never used adversarially; adaptation is invisible so it is never "
-    "evaluated against a control. This project does all three.",
- 10: "Explain the order-1 failure concretely: a player running a route passes through the same "
-     "room repeatedly with different successors each time. Order-1 conditions only on the current "
-     "room, so it cannot separate those cases.",
- 11: "Walk the equation slowly. w is a confidence weight: the more often a context has been seen, "
-     "the more the model trusts it, otherwise it backs off to shorter context. Four properties "
-     "matter: online, persistent, inspectable, cheap.",
- 12: "Emphasise the separation. Predictor outputs beliefs; Director decides what to do. That is "
-     "why the model can be swapped for a GRU later without re-tuning the horror. All four counter-"
-     "moves are implemented AND measured — say that explicitly.",
- 13: "The control is the strongest thing in this project. Against a random player the model MUST "
-     "NOT beat baseline. If it did, something is leaking. Prequential evaluation means every "
-     "prediction is made before its outcome is seen — no train/test split needed and no leakage "
-     "possible by construction.",
- 14: "Eight modules. Two design decisions to defend: Sabotage is the single mutator, so every lie "
-     "the game tells is logged and replayable; the Notebook sits outside the loop entirely, which "
-     "is what makes it the player's counter-move rather than decoration.",
- 15: "Skim this. It is here as evidence of module-level design for the rubric, not to be read out.",
- 16: "Lead with the control row (the 37/36/37 column), not the 90% one. Explain why the control "
-     "matters BEFORE showing the win. That framing is what makes the result credible.",
- 17: "Cold start solved: 44% to ~91% inside about 60 observed moves. This is the answer to 'how "
-     "can it be interesting against a player it has never seen?'",
- 18: "Two honest points. First, hub-camping at 305 is a strong baseline and I included it "
-     "deliberately. Second, the one-step director at 364 is only slightly ahead of order-1 Markov "
-     "at 350 — I found that, diagnosed it as a targeting bug rather than a model problem, and "
-     "fixed it. The interceptor is at 390. If a panellist pushes on the narrow gap, agree with "
-     "them and go straight to the next slide.",
- 19: "This is the answer to 'hub-camping is nearly as good, so why bother?'. It is only nearly as "
-     "good on a small map. At 32 rooms the advantage is 1.57x and widening. The ten-room result "
-     "understates the value of prediction.",
- 20: "Note the entity is REMOVED here — this isolates world editing from interception. 60% more "
-     "moves per objective lap, and every mutation passed a reachability check so no run was ever "
-     "soft-locked.",
- 21: "Volunteer this one; do not wait to be asked. Targeted sabotage gives NO advantage when the "
-     "player relies on every room equally. It only pays off against uneven habits. Reporting a "
-     "negative result is a strength, not a weakness — say so.",
- 22: "Nine invariants, 25 generated facilities, all passing. The two that matter most: 'uplink "
-     "reachable after mutation' (the AI can never soft-lock you) and 'VOMM approximates uniform on "
-     "a random player' (no leakage). Offer to run it live — it takes seconds.",
- 23: "Run the demo here. Press auto-play and talk over it. Point at the belief panel, then the live "
-     "accuracy comparison, then the learned-rule readout in plain English. Let the counter-move "
-     "counters tick up while you talk.",
- 24: "Be direct: M0 to M2 are done, M3 is next. The 3D game does not exist yet. The art direction is "
-     "settled and chosen to minimise modelling cost, and room modularity is forced by the design "
-     "anyway because rooms are added and rotated at runtime.",
- 25: "References 1 to 11.",
- 26: "References 12 to 22.",
+ 1: "Pitch: a horror antagonist that builds a live behavioural model of the individual "
+    "player and acts on its predictions. The model is the project; the game makes it legible.",
+ 2: "Point the panel at where each rubric item is answered. Do not linger.",
+ 3: "Game AI optimises for agents that PLAY well. Adapting to the specific person is a "
+    "different, less-solved problem. Horror is where it matters most because the genre dies "
+    "when the player learns it.",
+ 4: "Static AI is learnable and stops scaring. Random AI feels unfair. Neither adapts to you. "
+    "If asked 'isn't this DDA?' — no: DDA tunes difficulty magnitude, this changes WHERE the "
+    "antagonist chooses to be.",
+ 5: "Be explicit that the Godot build is NOT done. Do not let them think a 3D game exists.",
+ 6: "22 works, 20 from 2023 or later. State the selection criteria out loud.",
+ 7: "Do not read the table. Name two: Romeo (closest analogue) and Lopes (review that names "
+    "evaluation as the field's weak point — the gap the bot harness addresses).",
+ 8: "Name Begleiter aloud — it is the formal basis of the model. If challenged on a 2004 paper "
+    "in a 'recent' review: it is the foundational treatment, and four 2025 trajectory-prediction "
+    "papers beside it are the modern line.",
+ 9: "Three gaps: DDA adapts parameters not position; trajectory prediction is never used "
+    "adversarially; adaptation is invisible so it is never evaluated against a control.",
+ 10: "The clock is the thing to explain well. Lockdown, window, lockdown. You act only when the "
+     "doors open — and STAYING is one of the choices. That matters: the model must predict "
+     "whether you move at all, not just where. The antagonist obeys the same clock.",
+ 11: "Walk the equation slowly. w is a confidence weight: the more a context has been seen, the "
+     "more the model trusts it; otherwise it backs off to shorter context.",
+ 12: "Predictor outputs beliefs, Director decides what to do. All four counter-moves are "
+     "implemented AND measured — say so explicitly.",
+ 13: "The control is the strongest thing here. Against a random player the model MUST NOT beat "
+     "baseline. Prequential evaluation means every prediction precedes its outcome — no leakage "
+     "possible by construction. Note EvasiveBot: I built a bot specifically to try to beat my "
+     "own AI.",
+ 14: "Two decisions to defend: Sabotage is the single mutator so every lie is logged and "
+     "replayable; the Notebook sits outside the loop, which is what makes it the player's "
+     "counter-move rather than decoration.",
+ 15: "Skim. It is here as module-level design evidence, not to be read aloud.",
+ 16: "Lead with the CONTROL column (27/26/27), not the 61%. Explain why the control matters "
+     "before showing the win. If asked why accuracy is 61% and not higher: because staying is a "
+     "legal move, and predicting whether someone moves at all is harder than predicting where. "
+     "An earlier version of this work forbade waiting and scored 90% — that number was inflated "
+     "and I corrected it.",
+ 17: "Cold start: the model is useful within about a minute of play, with no prior data on "
+     "this player.",
+ 18: "Be straight here. Every model-driven antagonist beats the non-learning baselines, but the "
+     "models are within noise of each other, and five-step lookahead is now slightly worse than "
+     "one-step. That is expected: rollout error compounds, so lookahead helps an accurate model "
+     "and hurts an uncertain one. Volunteer this before they find it.",
+ 19: "The answer to 'hub-camping is nearly as good'. It is only nearly as good on a small map. "
+     "The advantage widens as the facility grows.",
+ 20: "The entity is REMOVED here — this isolates world editing from hunting. About 60% more "
+     "moves per objective lap, and every mutation passed a reachability check, so no run was "
+     "ever soft-locked.",
+ 21: "Volunteer this. Targeted sabotage gives NO advantage when the player relies on every room "
+     "equally; it only pays off against uneven habits. Reporting a null is a strength.",
+ 22: "The most valuable slide in the deck, and it is a negative result. I built a bot to beat my "
+     "own AI by waiting. It degrades the model's accuracy but barely reduces capture risk — "
+     "because the antagonist currently sees everything, so standing still just makes you a "
+     "stationary target. That diagnosis is what set the next milestone: sense the player through "
+     "door motion-detectors instead of omniscience, which turns this into partially-observed "
+     "prediction. If you only defend one slide well, defend this one.",
+ 23: "Nine invariants, 25 facilities, all passing. The two that matter: uplink reachable after "
+     "mutation (the AI can never soft-lock you) and VOMM approximating uniform on a random "
+     "player (no leakage). Offer to run it live — it takes seconds.",
+ 24: "Run the demo. Press auto-play and talk over it. Point at the belief panel, then the live "
+     "accuracy comparison, then the learned-rule readout, then the counter-move counters.",
+ 25: "M0 to M2 done, M3 next; the 3D game does not exist yet. M6 to M8 are specified from the "
+     "design work: door sensors and partial observation, polygonal room tiles where side count "
+     "IS the difficulty setting, and the outbound register the AI can tamper with before you "
+     "send. Say that the negative result on slide 22 is what prioritised M6.",
+ 26: "References 1 to 11.",
+ 27: "References 12 to 22.",
 }
 
 for idx, sl in enumerate(prs.slides, start=1):

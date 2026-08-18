@@ -49,9 +49,10 @@ Prediction accuracy (top-1 next room, 10 rooms, 1200 steps x 12 seeds):
 
 | Player | No model | Order-1 Markov | **VOMM** |
 |---|---|---|---|
-| Habitual | 40.7% | 61.9% | **89.6%** |
-| Explorer | 38.5% | 61.2% | **94.8%** |
-| Random *(control)* | 36.6% | 36.4% | **36.6%** |
+| Habitual | 30.6% | 46.2% | **61.1%** |
+| Explorer | 31.2% | 53.0% | **69.6%** |
+| Evasive *(waits on purpose)* | 26.4% | 45.6% | **55.7%** |
+| Random *(control)* | 26.9% | 25.9% | **26.7%** |
 
 The control is the important row: against a random player the model performs
 identically to no model at all, which is what a correctly implemented predictor
@@ -61,15 +62,16 @@ Embodied pursuit — an entity that occupies a room and moves one room per step:
 
 | Entity behaviour | Captures / 1000 moves |
 |---|---|
-| Random walk *(control)* | 99 |
-| Camp the busiest junction | 305 |
-| Order-1 Markov director | 350 |
-| VOMM, one-step targeting | 364 |
-| **VOMM interceptor** | **390** |
+| Random walk *(control)* | 108 |
+| Camp the busiest junction | 261 |
+| Order-1 Markov director | 310 |
+| VOMM, one-step targeting | 317 |
+| VOMM interceptor (5-step lookahead) | 302 |
 
-The interceptor rolls the model forward five steps and picks the earliest predicted
-room it can reach no later than the player, rather than aiming at the next room it
-cannot reach in time. The advantage over hub-camping widens with facility size —
+Every model-driven antagonist beats the non-learning baselines, but the models sit
+within noise of each other, and five-step lookahead is now slightly *worse* than
+one-step: at 61% single-step accuracy, rollout error compounds faster than the
+extra foresight pays. The advantage over hub-camping widens with facility size —
 1.30x at 10 rooms, 1.57x at 32 — so the small-facility number understates it.
 
 World editing, with the entity removed so topology mutation is isolated:
@@ -82,6 +84,12 @@ World editing, with the entity removed so topology mutation is isolated:
 Targeted sabotage is a **conditional** result: it gives no advantage over random
 targeting when the player relies on every room equally, and an 12% advantage when
 their reliance is uneven. Reported as such in the report, section 5.5.
+
+**Waiting does not defend (a negative result).** An evasive player who declines 35%
+of windows costs the model 4.7 points of accuracy but reduces their capture risk
+by only 1.7%. The antagonist currently observes position perfectly, so standing
+still cannot conceal — it only parks you. Next milestone is door motion-sensors and
+partial observation, which is what this experiment identified.
 
 ## Verification
 

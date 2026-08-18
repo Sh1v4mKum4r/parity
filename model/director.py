@@ -113,7 +113,7 @@ class FullDirector:
         """
         path, hist, cur = [], list(history), player
         for _ in range(depth):
-            c = self.fac.neighbors(cur)
+            c = self.fac.neighbors(cur) + [cur]      # staying is a legal choice
             if not c:
                 break
             d = self.model.predict(hist, c)
@@ -126,7 +126,7 @@ class FullDirector:
         """Score every legal counter-move; apply the best. Returns the action or None."""
         if t - self.last_edit < self.cooldown:
             return None
-        cands = self.fac.neighbors(player)
+        cands = self.fac.neighbors(player) + [player]
         conf = self.confidence(history, cands)
         if conf < self.gate:                       # rule 2: unsure -> hunt conventionally
             return None
@@ -205,7 +205,7 @@ class InterceptDirector:
         """Roll the model forward, carrying the probability of staying on it."""
         path, hist, cur, p = [], list(history), player, 1.0
         for _ in range(self.depth):
-            c = self.fac.neighbors(cur)
+            c = self.fac.neighbors(cur) + [cur]   # staying is a legal choice
             if not c:
                 break
             d = self.model.predict(hist, c)

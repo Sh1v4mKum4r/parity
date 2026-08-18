@@ -147,10 +147,22 @@ The facility is an undirected graph `G = (V, E)`: rooms are vertices, doors are
 edges. The player occupies a vertex and moves along edges, producing a trajectory
 `h = (v₁, v₂, …, vₜ)`.
 
-**Prediction task.** Given trajectory `h` and the candidate set
-`N(vₜ)` (rooms adjacent to the player), estimate
+**The clock.** The facility runs on a single shared cycle: lockdown, then a short
+window in which every door unlocks, then lockdown again. Decisions happen only at
+windows. During lockdown the player is sealed in place — which is when they draw in
+the notebook, copy a codebook, or stage the outgoing register. Drawing is real-time,
+so an open door and an unfinished page compete for the same seconds.
 
-> `P(v_{t+1} = c | h)` for each `c ∈ N(vₜ)`
+**Prediction task.** At each window the player chooses a door *or declines to move*.
+Given trajectory `h`, estimate
+
+> `P(v_{t+1} = c | h)` for each `c ∈ N(vₜ) ∪ {vₜ}`
+
+**Staying is a first-class action, not the absence of one.** Including `vₜ` in the
+candidate set is what makes dwell predictable at all — and dwell is highly
+informative, because a player lingers where there is something to record. The
+antagonist is bound by the same clock: it also acts only at windows, so lockdown is
+genuinely safe and all the danger concentrates at the moment the doors open.
 
 **Why a variable-order model is required.** An order-1 Markov model conditions only
 on `vₜ`. But real players run *routes*, so the same room has different successors
@@ -210,7 +222,7 @@ than fear (§2.5). Three hard invariants:
 3. **Solvability invariant** — every topology mutation is checked for graph
    connectivity and objective reachability, and reverted if it would soft-lock the
    run. Both mutation operators revert any edit that fails this check, and the
-   property is asserted over 25 generated facilities in the invariant suite (§5.7).
+   property is asserted over 25 generated facilities in the invariant suite (§5.8).
 
 Notably, **no signal is emitted when sabotage occurs.** The player's hand-kept
 notebook is the only means of detecting it. Sabotage nonetheless lands almost
@@ -225,7 +237,9 @@ bot-driven**. Three scripted players stand in for humans:
 
 - **HabitualBot** — runs a fixed objective circuit (models a player who has learned the level)
 - **ExplorerBot** — systematic least-recently-visited sweep (models a first-time player)
-- **RandomBot** — uniform over neighbours (**the control**: contains no habit at all)
+- **EvasiveBot** — pursues the same objectives but declines 35% of windows on purpose,
+  to desynchronise from anything modelling it (**the counter-play**)
+- **RandomBot** — uniform over doors *and staying* (**the control**: no habit at all)
 
 All accuracy is measured **prequentially** — every prediction is made before its
 outcome is observed, so there is no train/test leakage by construction.
@@ -310,6 +324,11 @@ codebook or rotates a room, the notebook does not become corrupted — it become
 | Interactive browser demo (graph, live belief, entity, codebooks, sabotage) | Implemented, JS |
 | Notebook staleness / codebook poisoning in the simulation core | Modelled abstractly; full cipher loop is M4 |
 | Godot first-person vertical slice | Next milestone |
+| **Polygonal room tiles (side count = difficulty setting)** | **Designed, not built** |
+| **Tile rotation as a counter-move ("changing room orientation")** | **Designed, not built** |
+| **Door motion-sensors and partial observation** | **Designed, not built** |
+| **Outbound bit register with pre-send tampering** | **Designed, not built** |
+| **Dangerous tasks that buy sensor blackouts** | **Designed, not built** |
 | Notebook vector editor | Designed, not built |
 
 ---
@@ -322,9 +341,10 @@ Facility: 10 rooms. 1200 steps × 12 seeds per condition. Prequential evaluation
 
 | Player | Uniform (no model) | Order-1 Markov | **VOMM (proposed)** |
 |---|---|---|---|
-| Habitual | 40.7% | 61.9% | **89.6%** |
-| Explorer | 38.5% | 61.2% | **94.8%** |
-| Random *(control)* | 36.6% | 36.4% | **36.6%** |
+| Habitual | 30.6% | 46.2% | **61.1%** |
+| Explorer | 31.2% | 53.0% | **69.6%** |
+| Evasive *(waits to break pattern)* | 26.4% | 45.6% | **55.7%** |
+| Random *(control)* | 26.9% | 25.9% | **26.7%** |
 
 ![Top-1 next-room accuracy by player type and model](../out/fig_accuracy.png)
 
@@ -427,7 +447,34 @@ model-guided targeting performs no better than random. The counter-move only ear
 its place against a player with uneven habits — which is the realistic case, but the
 claim is conditional and should not be overstated.
 
-### 5.7 Invariant test suite
+### 5.7 Can the player fight back by waiting? *(a negative result)*
+
+Waiting is the natural counter-play to an interceptor: if it moves to where you are
+going, do not go. A fair adaptive antagonist must be beatable this way, so this
+experiment tests whether it is.
+
+| Player | Windows declined | Model accuracy against them | Captures / 1000 |
+|---|---|---|---|
+| Habitual | 23% | 46.6% | 304 |
+| **Evasive** | 35% | 41.9% | 299 |
+
+Evasion **works against the model and fails against the outcome.** Declining a third
+of all windows costs the predictor 4.7 points of accuracy, but reduces the
+player's capture rate by only 1.7%.
+
+The cause is the observation model, not the algorithm. In the current build the
+antagonist observes the player's position perfectly at every window. Under perfect
+observation, standing still cannot conceal you — it only converts you into a
+stationary target that the antagonist can walk to at its leisure. Degrading its
+*predictions* is worthless when it does not need to predict.
+
+**This directly motivates the next design iteration.** The antagonist should sense
+the player through motion detectors on the doors rather than by omniscience, so that
+declining a window genuinely denies it information. That change converts the problem
+from fully-observed to partially-observed sequence prediction, and it is the single
+most valuable thing this experiment identified.
+
+### 5.8 Invariant test suite
 
 Nine invariants are asserted over 25 generated facilities and thousands of simulated
 moves (`model/test_invariants.py`, all passing):
@@ -444,10 +491,10 @@ moves (`model/test_invariants.py`, all passing):
 | Director never mutates a visible room | Fairness rule 1 |
 | Director never edits below its confidence gate | Fairness rule 2 |
 
-### 5.8 Interactive demonstration
+### 5.9 Interactive demonstration
 
 A browser demo runs the full loop live: room graph, per-room predicted
-probabilities, an entity that intercepts on prediction, codebook recording, and all
+probabilities, an entity that intercepts on prediction, codebook recording, and staying as a legal choice at every window, and all
 four Director counter-moves — interception, door sealing, room rewiring and codebook
 poisoning — each with a live counter, and each subject to the same fairness rules as
 the Python implementation (nothing visible is mutated; nothing happens below the
@@ -455,9 +502,12 @@ confidence gate; no edit may disconnect the facility). It displays running VOMM 
 no-model control and a plain-language readout of the strongest learned rule
 (e.g. *"from E you go to B 100% of the time, 13 observations"*).
 
-Observed in a 126-move automated session: **VOMM 74% vs. no-model 48%**. The
-Director sealed 2 doors, rewired 4 rooms and poisoned 10 codebooks, corrupting 4 of
-19 transmitted signals. The player was told none of it.
+Observed in a 102-window automated session: the player declined 32 windows (31%) to
+finish notebook pages, **VOMM ran at 47% against a no-model control at 36%**, and the
+Director intercepted 22 times while poisoning enough codebooks to corrupt 2 of 13
+transmitted signals. The player was told none of it. The confidence gate is visible
+in operation — the monitor reports "too unsure to intercept; hunting conventionally"
+whenever belief drops below the threshold.
 
 ---
 

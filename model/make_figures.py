@@ -32,24 +32,25 @@ def _finish(ax, title, sub=None):
 
 
 def fig_accuracy(out):
-    bots = ["habitual", "explorer", "random"]
-    names = ["Habitual player\n(follows routes)", "Explorer\n(systematic sweep)", "Random\n(control)"]
+    bots = ["habitual", "explorer", "evasive", "random"]
+    names = ["Habitual\n(follows routes)", "Explorer\n(systematic sweep)",
+             "Evasive\n(waits to break pattern)", "Random\n(control)"]
     models = ["uniform", "markov-1", "vomm"]
     fig, ax = plt.subplots(figsize=(8.2, 4.2))
-    w, xs = 0.26, range(len(bots))
+    w, xs = 0.24, range(len(bots))
     for i, mk in enumerate(models):
         vals = [M["e1_accuracy"][f"{b}|{mk}"]["top1"] * 100 for b in bots]
         pos = [x + (i - 1) * w for x in xs]
         ax.bar(pos, vals, width=w - 0.02, color=COLOR[mk], label=LABEL[mk], zorder=3)
         for p, v in zip(pos, vals):
             ax.text(p, v + 1.6, f"{v:.0f}%", ha="center", fontsize=8.5, color=INK2)
-    ax.set_xticks(list(xs)); ax.set_xticklabels(names, fontsize=9)
+    ax.set_xticks(list(xs)); ax.set_xticklabels(names, fontsize=8.5)
     ax.set_ylabel("Top-1 next-room accuracy"); ax.set_ylim(0, 108)
     ax.set_yticks([0, 25, 50, 75, 100]); ax.set_yticklabels(["0%", "25%", "50%", "75%", "100%"])
     ax.grid(axis="y", color=GRID, lw=0.8, zorder=0); ax.set_axisbelow(True)
     ax.legend(frameon=False, fontsize=9, loc="upper right", ncol=1)
     _finish(ax, "The model learns habits — and correctly learns nothing from noise",
-            "Prequential top-1 accuracy, 10-room facility, 1200 steps x 12 seeds")
+            "Prequential top-1 accuracy over {door, door, ..., stay}. 10 rooms, 1200 windows x 12 seeds")
     fig.tight_layout(); fig.savefig(out, dpi=200); plt.close(fig)
 
 

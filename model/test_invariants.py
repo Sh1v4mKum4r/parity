@@ -8,7 +8,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 from facility import Facility
-from bots import HabitualBot, ExplorerBot, RandomBot
+from bots import HabitualBot, ExplorerBot, RandomBot, EvasiveBot
 from predictors import VOMM, MarkovOrder1, UniformNeighbour
 from director import FullDirector
 
@@ -79,9 +79,10 @@ def _():
                 f"seed {s}: uplink unreachable from room {r} -- run is soft-locked"
 
 
-@check("bots only ever move to an adjacent room")
+@check("bots move to an adjacent room or stay put")
 def _():
-    for BotCls in (HabitualBot, ExplorerBot, RandomBot):
+    seen_stay = {}
+    for BotCls in (HabitualBot, ExplorerBot, RandomBot, EvasiveBot):
         for s in list(SEEDS)[:10]:
             f = Facility(10, seed=s)
             bot = BotCls(f, seed=s)
@@ -90,7 +91,10 @@ def _():
                 nxt = bot.step()
                 assert nxt == cur or nxt in f.neighbors(cur), \
                     f"{BotCls.__name__} teleported from {cur} to {nxt}"
+                seen_stay[BotCls.__name__] = seen_stay.get(BotCls.__name__, 0) + (nxt == cur)
                 bot.resync(nxt); cur = nxt
+    for name, n in seen_stay.items():
+        assert n > 0, f"{name} never once declined a window -- staying is unexercised"
 
 
 @check("predictor output is a distribution over exactly the candidate set")
@@ -101,7 +105,7 @@ def _():
         bot = HabitualBot(f, seed=0)
         hist = [bot.pos]
         for _ in range(200):
-            cands = f.neighbors(hist[-1])
+            cands = f.neighbors(hist[-1]) + [hist[-1]]
             d = m.predict(hist[-8:], cands)
             assert set(d) == set(cands), f"{Model.__name__} predicted outside the candidate set"
             assert abs(sum(d.values()) - 1.0) < 1e-9, f"{Model.__name__} distribution sums to {sum(d.values())}"
@@ -120,7 +124,7 @@ def _():
             m = Model()
             hist, hit, n = [bot.pos], 0, 0
             for _ in range(800):
-                cands = f.neighbors(hist[-1])
+                cands = f.neighbors(hist[-1]) + [hist[-1]]
                 d = m.predict(hist[-8:], cands)
                 top = max(d.items(), key=lambda kv: kv[1])[0]
                 nxt = bot.step(); bot.resync(nxt)
@@ -168,7 +172,8 @@ def _():
             d.model.observe(hist[-8:], nxt); d.observe_move(prev, nxt)
             hist.append(nxt)
             before = len(d.log)
-            conf = d.confidence(hist[-8:], f.neighbors(nxt))
+            # same candidate set the Director itself decides over: doors + staying
+            conf = d.confidence(hist[-8:], f.neighbors(nxt) + [nxt])
             d.maybe_edit(t, hist[-8:], nxt, recorded=[])
             if len(d.log) > before:
                 assert conf >= 0.6, f"seed {s}: edited the world at confidence {conf:.3f} < gate 0.6"

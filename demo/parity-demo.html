@@ -61,11 +61,13 @@
   <header>
     <div>
       <h1>P A R I T Y</h1>
-      <div class="sub">Facility monitor &mdash; live view of the predictive model. Move between rooms; the model
-        learns your routes and the entity intercepts where it expects you, not where you are.</div>
+      <div class="sub">Facility monitor &mdash; live view of the predictive model. Doors open on a shared clock:
+        take one, or hold position. The model learns your routes &mdash; including when you wait &mdash; and the
+        entity intercepts where it expects you to be.</div>
     </div>
     <div class="btns">
       <button id="btn-auto">Auto-play habitual player</button>
+      <button id="btn-hold">Hold position</button>
       <button id="btn-reset">Reset facility</button>
     </div>
   </header>
@@ -111,7 +113,8 @@
 
       <div class="card">
         <h2>Run</h2>
-        <div class="row"><span>Moves</span><span id="s-moves">0</span></div>
+        <div class="row"><span>Windows</span><span id="s-moves">0</span></div>
+        <div class="row"><span>Windows declined</span><span id="s-held">0</span></div>
         <div class="row"><span>Captures</span><span id="s-caught">0</span></div>
         <div class="row"><span>Signals sent</span><span id="s-sent">0</span></div>
         <div class="row"><span>Signals corrupted</span><span id="s-bad">0</span></div>
@@ -259,7 +262,7 @@ function reset(){
   hist = []; notebook = new Map();
   player = R.findIndex(r => r.kind === "comms");
   entity = pick(R.filter(r => r.id !== player)).id;
-  stats = { moves:0, caught:0, sent:0, bad:0, vHit:0, uHit:0, nPred:0, acts:{seal:0,rewire:0,poison:0} };
+  stats = { moves:0, caught:0, sent:0, bad:0, vHit:0, uHit:0, nPred:0, held:0, acts:{seal:0,rewire:0,poison:0} };
   edgeCount = {}; roomCount = {}; lastEdit = -99;
   newTarget(); logClear();
   say("Facility online. " + KEYWORDS.length + " codebooks distributed. Uplink at room " + R[player].glyph + ".");
@@ -274,9 +277,9 @@ function newTarget(){
 
 // ---------- movement ----------
 function move(to){
-  if(!R[player].nb.includes(to)) return;
+  if(to !== player && !R[player].nb.includes(to)) return;
 
-  const cands = R[player].nb;
+  const cands = R[player].nb.concat([player]);
   const dist = model.predict(hist, cands);
   let best = cands[0]; cands.forEach(c => { if(dist[c] > dist[best]) best = c; });
   pendingPred = best;
@@ -295,10 +298,12 @@ function move(to){
   if(best === to) stats.vHit++;
   if(pick(cands) === to) stats.uHit++;
 
+  const prevRoom = player;
   noteMove(player, to);
   model.observe(hist, to);
   hist.push(to); if(hist.length > 8) hist.shift();
   player = to; stats.moves++;
+  if(to === prevRoom) stats.held++;
 
   if(player === entity){
     stats.caught++;
@@ -374,7 +379,7 @@ function visibleSet(){ return new Set([player, ...R[player].nb]); }
 function lookahead(depth){
   const path = []; let h = hist.slice(), cur = player;
   for(let i=0;i<depth;i++){
-    const c = R[cur].nb; if(!c.length) break;
+    const c = R[cur].nb.concat([cur]); if(!c.length) break;
     const d = model.predict(h, c);
     cur = c.reduce((x,y)=> d[y] > d[x] ? y : x, c[0]);
     path.push(cur); h = h.concat([cur]);
@@ -384,7 +389,7 @@ function lookahead(depth){
 
 function directorEdit(){
   if(stats.moves - lastEdit < COOLDOWN) return;
-  const cands = R[player].nb, dist = model.predict(hist, cands);
+  const cands = R[player].nb.concat([player]), dist = model.predict(hist, cands);
   let conf = 0; cands.forEach(c => conf = Math.max(conf, dist[c] || 0));
   if(conf < GATE) return;                                   // rule 2
   const vis = visibleSet();                                 // rule 1
@@ -478,7 +483,7 @@ function draw(){
 // ---------- ui ----------
 const $ = id => document.getElementById(id);
 function ui(){
-  const cands = R[player].nb, dist = model.predict(hist, cands);
+  const cands = R[player].nb.concat([player]), dist = model.predict(hist, cands);
   const sorted = [...cands].sort((a,b) => dist[b]-dist[a]);
   $("pred").innerHTML = sorted.map(c => {
     const p = dist[c] || 0;
@@ -516,6 +521,7 @@ function ui(){
   $("a-seal").textContent = stats.acts.seal;
   $("a-rewire").textContent = stats.acts.rewire;
   $("a-poison").textContent = stats.acts.poison;
+  $("s-held").textContent = stats.held;
   $("s-moves").textContent = stats.moves; $("s-caught").textContent = stats.caught;
   $("s-sent").textContent = stats.sent; $("s-bad").textContent = stats.bad;
 }
@@ -536,7 +542,7 @@ cv.addEventListener("click", e => {
   const y = (e.clientY - b.top) * (cv.height / b.height);
   let hit = null;
   R.forEach(r => { if(Math.hypot(r.x - x, r.y - y) < 38) hit = r.id; });
-  if(hit !== null && R[player].nb.includes(hit)){ auto = false; $("btn-auto").classList.remove("on"); move(hit); }
+  if(hit !== null && (hit === player || R[player].nb.includes(hit))){ auto = false; $("btn-auto").classList.remove("on"); move(hit); }
 });
 
 // habitual auto-player: walks a fixed circuit, which is exactly the behaviour the model feeds on
@@ -550,6 +556,7 @@ function autoStep(){
     autoI = 0;
     if(!autoRoute.length){ autoRoute = [pick(R[player].nb)]; }
   }
+  if(R[player].kind !== "plain" && rnd() < 0.28){ move(player); setTimeout(autoStep, 420); return; }
   const nxt = autoRoute[autoI++];
   if(R[player].nb.includes(nxt)) move(nxt); else { autoRoute = []; autoI = 0; }
   setTimeout(autoStep, 420);
@@ -559,6 +566,11 @@ $("btn-auto").addEventListener("click", () => {
   auto = !auto; $("btn-auto").classList.toggle("on", auto);
   $("btn-auto").textContent = auto ? "Stop auto-play" : "Auto-play habitual player";
   if(auto){ autoRoute = []; autoI = 0; autoStep(); }
+});
+$("btn-hold").addEventListener("click", () => {
+  auto = false; $("btn-auto").classList.remove("on");
+  $("btn-auto").textContent = "Auto-play habitual player";
+  move(player);                       // decline the window: stay where you are
 });
 $("btn-reset").addEventListener("click", () => { auto = false; $("btn-auto").classList.remove("on");
   $("btn-auto").textContent = "Auto-play habitual player"; reset(); });

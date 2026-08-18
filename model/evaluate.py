@@ -15,11 +15,17 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 from facility import Facility
-from bots import HabitualBot, ExplorerBot, RandomBot
+from bots import HabitualBot, ExplorerBot, RandomBot, EvasiveBot
 from predictors import UniformNeighbour, MarkovOrder1, VOMM
 from director import ModelDirector, RandomAmbush, DegreeCamp, FullDirector, InterceptDirector
 
-BOTS = {"habitual": HabitualBot, "explorer": ExplorerBot, "random": RandomBot}
+BOTS = {"habitual": HabitualBot, "explorer": ExplorerBot,
+        "random": RandomBot, "evasive": EvasiveBot}
+
+
+def opts(fac, r):
+    """The player's choices at a window: any door, or stay put."""
+    return fac.neighbors(r) + [r]
 STEPS, SEEDS, CTX = 1200, 12, 8
 
 
@@ -45,7 +51,7 @@ def e1_accuracy():
                 hist, hits1, hits3, n = [bot.pos], 0, 0, 0
                 for _ in range(STEPS):
                     cur = hist[-1]
-                    cands = fac.neighbors(cur)
+                    cands = opts(fac, cur)
                     if not cands:
                         break
                     dist = model.predict(hist[-CTX:], cands)
@@ -79,7 +85,7 @@ def e2_learning_curve(bot_name="habitual", window=20):
             model = _make_model(kind)
             hist, marks = [bot.pos], []
             for _ in range(STEPS):
-                cands = fac.neighbors(hist[-1])
+                cands = opts(fac, hist[-1])
                 if not cands:
                     break
                 dist = model.predict(hist[-CTX:], cands)
@@ -113,7 +119,7 @@ def e3_capture(bot_name="habitual"):
             hist, caught, n = [bot.pos], 0, 0
             rng = random.Random(seed + 7)
             for _ in range(STEPS):
-                cands = fac.neighbors(hist[-1])
+                cands = opts(fac, hist[-1])
                 if not cands:
                     break
                 ambush = d.choose_ambush(hist[-CTX:], cands)
@@ -156,7 +162,7 @@ def e4_pursuit(bot_name="habitual"):
             epos = rng.choice(list(fac.rooms))
             hist, caught, n = [bot.pos], 0, 0
             for _ in range(STEPS):
-                cands = fac.neighbors(hist[-1])
+                cands = opts(fac, hist[-1])
                 if not cands:
                     break
                 if label == "random-walk":
@@ -306,7 +312,7 @@ def e7_scaling(sizes=(10, 16, 24, 32), seeds=8, steps=1200):
                 epos = rng.choice(list(fac.rooms))
                 hist, caught, cnt = [bot.pos], 0, 0
                 for _ in range(steps):
-                    cands = fac.neighbors(hist[-1])
+                    cands = opts(fac, hist[-1])
                     if not cands:
                         break
                     if label == "random-walk":
@@ -336,6 +342,55 @@ def e7_scaling(sizes=(10, 16, 24, 32), seeds=8, steps=1200):
     return out
 
 
+
+def e8_waiting_defends(steps=1500):
+    """Can the player fight back by declining windows?
+
+    Waiting is the natural counter-play to an interceptor: if it moves to where
+    you are going, do not go. A fair adaptive antagonist must be beatable this
+    way. If an evasive player is caught as often as a habitual one, the AI is not
+    reading habit at all -- it is just fast. If evasion helps enormously, the
+    antagonist is too easily defeated. Both failure modes are visible here.
+    """
+    from bots import _bfs_path
+    out = {}
+    for bot_name in ("habitual", "evasive"):
+        rates, waits, accs = [], [], []
+        for seed in range(SEEDS):
+            fac = Facility(10, seed=seed)
+            bot = BOTS[bot_name](fac, seed=seed + 100)
+            model = VOMM()
+            icept = InterceptDirector(model, fac)
+            rng = random.Random(seed + 31)
+            epos = rng.choice(list(fac.rooms))
+            hist, caught, n, hit = [bot.pos], 0, 0, 0
+            for _ in range(steps):
+                cands = opts(fac, hist[-1])
+                d = model.predict(hist[-CTX:], cands)
+                top = max(d.items(), key=lambda kv: kv[1])[0]
+                target = icept.choose_target(hist[-CTX:], hist[-1], epos) or epos
+                path = _bfs_path(fac, epos, target)
+                epos = path[1] if len(path) > 1 else epos
+                actual = bot.step(); bot.resync(actual)
+                n += 1; hit += (top == actual)
+                if actual == epos:
+                    caught += 1
+                    actual = rng.choice(list(fac.rooms)); bot.resync(actual)
+                    epos = rng.choice(list(fac.rooms))
+                model.observe(hist[-CTX:], actual)
+                hist.append(actual)
+            rates.append(1000.0 * caught / n)
+            accs.append(hit / n)
+            waits.append(100.0 * getattr(bot, "waits", 0) / n)
+        out[bot_name] = {"per_1000": statistics.mean(rates),
+                         "sd": statistics.pstdev(rates),
+                         "top1_accuracy": statistics.mean(accs),
+                         "windows_declined_pct": statistics.mean(waits)}
+    h, e = out["habitual"]["per_1000"], out["evasive"]["per_1000"]
+    out["evasive"]["risk_reduction_pct"] = 100.0 * (1 - e / h)
+    return out
+
+
 def main():
     res = {
         "config": {"rooms": 10, "steps": STEPS, "seeds": SEEDS, "context": CTX},
@@ -347,6 +402,7 @@ def main():
         "e6_sabotage": e6_sabotage_precision(),
         "e6_sabotage_skewed": e6_sabotage_precision(skew=True),
         "e7_scaling": e7_scaling(),
+        "e8_waiting": e8_waiting_defends(),
     }
     out = Path(__file__).parent.parent / "out"
     out.mkdir(exist_ok=True)
@@ -357,7 +413,8 @@ def main():
     print("E5 disruption:", json.dumps(res["e5_disruption"], indent=2))
     print("E6 uniform reliance:", json.dumps(res["e6_sabotage"]))
     print("E6 uneven reliance :", json.dumps(res["e6_sabotage_skewed"]))
-    print("E7 scaling    :", json.dumps(res["e7_scaling"], indent=2))
+    print("E7 scaling    :", json.dumps(res["e7_scaling"]))
+    print("E8 waiting    :", json.dumps(res["e8_waiting"], indent=2))
     return res
 
 
