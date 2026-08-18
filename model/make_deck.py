@@ -492,6 +492,86 @@ for i, chunk in enumerate([refs, refs2]):
         run = p.add_run(); run.text = f"{i*11 + j + 1}.  {r}"
         run.font.size = Pt(12); run.font.color.rgb = INK; run.font.name = FONT
 
+
+# ---------------------------------------------------------------- speaker notes
+NOTES = {
+ 1: "Open with the one-sentence pitch: a horror antagonist that builds a live behavioural "
+    "model of the individual player and acts on its predictions. The model is the project; "
+    "the game is what makes it legible.",
+ 2: "Use this to tell the panel exactly where each rubric item is answered. Don't linger.",
+ 3: "Point: game AI research optimises for agents that PLAY well. Adapting to the specific "
+    "person is a different and less-solved problem. Horror is where it matters most because "
+    "the genre dies when the player learns it.",
+ 4: "The core argument. Static AI is learnable and stops scaring. Random AI is unlearnable "
+    "and feels unfair. Neither adapts to you. If asked 'isn't this just DDA?' — no: DDA tunes "
+    "difficulty magnitude, this changes WHERE the antagonist chooses to be.",
+ 5: "Seven objectives, six complete. Be explicit that O8 (the Godot build) is not done — do "
+    "not let them think a 3D game exists.",
+ 6: "22 works, 20 from 2023 or later. Say the selection criteria out loud: player behaviour "
+    "prediction, runtime adaptation, or discrete-trajectory prediction.",
+ 7: "Do not read the table. Pick two: Romeo (closest analogue, adapts encounters via RL) and "
+    "Lopes (systematic review that names evaluation as the field's weak point — which is the "
+    "gap my bot harness addresses).",
+ 8: "Begleiter is the one to name aloud — it is the formal basis of the model. If asked why a "
+    "2004 paper is in a 'recent papers' review: it is the foundational treatment of variable-"
+    "order Markov prediction, and the four 2025 trajectory-prediction papers beside it are the "
+    "modern line of work.",
+ 9: "The heart of the literature section. Three gaps: DDA adapts parameters not position; "
+    "trajectory prediction is never used adversarially; adaptation is invisible so it is never "
+    "evaluated against a control. This project does all three.",
+ 10: "Explain the order-1 failure concretely: a player running a route passes through the same "
+     "room repeatedly with different successors each time. Order-1 conditions only on the current "
+     "room, so it cannot separate those cases.",
+ 11: "Walk the equation slowly. w is a confidence weight: the more often a context has been seen, "
+     "the more the model trusts it, otherwise it backs off to shorter context. Four properties "
+     "matter: online, persistent, inspectable, cheap.",
+ 12: "Emphasise the separation. Predictor outputs beliefs; Director decides what to do. That is "
+     "why the model can be swapped for a GRU later without re-tuning the horror. All four counter-"
+     "moves are implemented AND measured — say that explicitly.",
+ 13: "The control is the strongest thing in this project. Against a random player the model MUST "
+     "NOT beat baseline. If it did, something is leaking. Prequential evaluation means every "
+     "prediction is made before its outcome is seen — no train/test split needed and no leakage "
+     "possible by construction.",
+ 14: "Eight modules. Two design decisions to defend: Sabotage is the single mutator, so every lie "
+     "the game tells is logged and replayable; the Notebook sits outside the loop entirely, which "
+     "is what makes it the player's counter-move rather than decoration.",
+ 15: "Skim this. It is here as evidence of module-level design for the rubric, not to be read out.",
+ 16: "Lead with the control row (the 37/36/37 column), not the 90% one. Explain why the control "
+     "matters BEFORE showing the win. That framing is what makes the result credible.",
+ 17: "Cold start solved: 44% to ~91% inside about 60 observed moves. This is the answer to 'how "
+     "can it be interesting against a player it has never seen?'",
+ 18: "Two honest points. First, hub-camping at 305 is a strong baseline and I included it "
+     "deliberately. Second, the one-step director at 364 is only slightly ahead of order-1 Markov "
+     "at 350 — I found that, diagnosed it as a targeting bug rather than a model problem, and "
+     "fixed it. The interceptor is at 390. If a panellist pushes on the narrow gap, agree with "
+     "them and go straight to the next slide.",
+ 19: "This is the answer to 'hub-camping is nearly as good, so why bother?'. It is only nearly as "
+     "good on a small map. At 32 rooms the advantage is 1.57x and widening. The ten-room result "
+     "understates the value of prediction.",
+ 20: "Note the entity is REMOVED here — this isolates world editing from interception. 60% more "
+     "moves per objective lap, and every mutation passed a reachability check so no run was ever "
+     "soft-locked.",
+ 21: "Volunteer this one; do not wait to be asked. Targeted sabotage gives NO advantage when the "
+     "player relies on every room equally. It only pays off against uneven habits. Reporting a "
+     "negative result is a strength, not a weakness — say so.",
+ 22: "Nine invariants, 25 generated facilities, all passing. The two that matter most: 'uplink "
+     "reachable after mutation' (the AI can never soft-lock you) and 'VOMM approximates uniform on "
+     "a random player' (no leakage). Offer to run it live — it takes seconds.",
+ 23: "Run the demo here. Press auto-play and talk over it. Point at the belief panel, then the live "
+     "accuracy comparison, then the learned-rule readout in plain English. Let the counter-move "
+     "counters tick up while you talk.",
+ 24: "Be direct: M0 to M2 are done, M3 is next. The 3D game does not exist yet. The art direction is "
+     "settled and chosen to minimise modelling cost, and room modularity is forced by the design "
+     "anyway because rooms are added and rotated at runtime.",
+ 25: "References 1 to 11.",
+ 26: "References 12 to 22.",
+}
+
+for idx, sl in enumerate(prs.slides, start=1):
+    if idx in NOTES:
+        tf = sl.notes_slide.notes_text_frame
+        tf.text = NOTES[idx]
+
 out = ROOT / "docs" / "PARITY-review-deck.pptx"
 prs.save(out)
 print("slides:", len(prs.slides.__iter__.__self__._sldIdLst), "->", out)
