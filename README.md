@@ -16,6 +16,7 @@ and quietly degrading the information you have come to depend on.
 | `docs/PARITY-cheat-sheet.pdf` | **Two-page review cheat sheet — numbers, likely questions, demo order** |
 | `demo/parity-demo.html` | **Playable model demo — any browser, no server, no internet** |
 | `demo/parity-room.html` | **Walkable 3D room study — WASD + mouse, hand-written WebGL, no engine** |
+| `demo/parity-notebook.html` | **Freehand notebook prototype — stroke-based, undo, pages, local save** |
 | `out/*.png` | Result figures and architecture diagram |
 | `out/metrics.json` | Raw numbers behind every figure |
 

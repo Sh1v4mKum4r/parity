@@ -1,0 +1,216 @@
+<title>Parity Notebook</title>
+<style>
+  :root{
+    --ground:#0b0a08; --panel:#14120e; --line:#2e2920; --ink:#e8dcc4; --muted:#8a7f6a;
+    --amber:#ffb545; --paper:#15150f; --grid:#221f18; --pen:#f0d9a8;
+    --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--ground);color:var(--ink);
+            font-family:var(--mono);font-size:12px;overflow:hidden;-webkit-font-smoothing:antialiased}
+  .wrap{height:100%;display:flex;flex-direction:column;padding:14px 16px;gap:10px;max-width:1100px;margin:0 auto}
+  header{display:flex;justify-content:space-between;align-items:baseline;gap:14px;flex-wrap:wrap}
+  h1{margin:0;font-size:15px;letter-spacing:.22em;color:var(--amber);font-weight:700}
+  .sub{color:var(--muted);font-size:11px}
+  .bar{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+  button{font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;
+         background:var(--panel);color:var(--ink);border:1px solid var(--line);padding:6px 10px;cursor:pointer}
+  button:hover{border-color:var(--amber);color:var(--amber)}
+  button.on{background:#8a5f18;border-color:var(--amber);color:#fff}
+  button:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
+  .pad{flex:1;position:relative;border:1px solid var(--line);background:var(--paper);min-height:0}
+  canvas{display:block;width:100%;height:100%;touch-action:none;cursor:crosshair}
+  .meta{display:flex;justify-content:space-between;color:var(--muted);font-size:11px}
+  .meta b{color:var(--amber);font-weight:400}
+  .sizes{display:flex;gap:4px;align-items:center}
+  .sw{width:22px;height:22px;border:1px solid var(--line);background:var(--panel);cursor:pointer;
+      display:grid;place-items:center}
+  .sw.on{border-color:var(--amber)}
+  .sw i{background:var(--pen);border-radius:50%;display:block}
+</style>
+
+<div class="wrap">
+  <header>
+    <div>
+      <h1>N O T E B O O K</h1>
+      <div class="sub">The only thing in the facility that cannot be edited against you.</div>
+    </div>
+    <div class="bar">
+      <button id="pen" class="on">Pen</button>
+      <button id="eraser">Eraser</button>
+      <div class="sizes" id="sizes"></div>
+      <button id="undo">Undo</button>
+      <button id="clear">Clear page</button>
+      <button id="prev">&larr;</button>
+      <button id="next">&rarr;</button>
+    </div>
+  </header>
+
+  <div class="pad"><canvas id="cv"></canvas></div>
+
+  <div class="meta">
+    <span>Page <b id="pno">1</b> of <b id="ptot">1</b> &nbsp;·&nbsp; <span id="strokes">0</span> strokes</span>
+    <span id="saved">saved locally</span>
+  </div>
+</div>
+
+<script>
+(() => {
+"use strict";
+const cv = document.getElementById("cv"), ctx = cv.getContext("2d");
+const $ = id => document.getElementById(id);
+
+// A page is just a list of strokes; a stroke is a width, a mode and a list of
+// points. Storing strokes rather than pixels gives undo for free, keeps saves
+// tiny, and lets the drawing survive a window resize.
+let pages = [[]], page = 0;
+let tool = "pen", size = 2.2, drawing = false, cur = null;
+
+const SIZES = [1.4, 2.2, 3.6, 6.0];
+$("sizes").innerHTML = SIZES.map((s,i) =>
+  `<div class="sw${i===1?" on":""}" data-i="${i}" title="${s}px"><i style="width:${Math.min(s+2,11)}px;height:${Math.min(s+2,11)}px"></i></div>`
+).join("");
+$("sizes").addEventListener("click", e => {
+  const el = e.target.closest(".sw"); if(!el) return;
+  size = SIZES[+el.dataset.i];
+  [...$("sizes").children].forEach(c => c.classList.toggle("on", c === el));
+});
+
+function fit(){
+  const r = cv.getBoundingClientRect(), d = window.devicePixelRatio || 1;
+  cv.width = Math.round(r.width * d); cv.height = Math.round(r.height * d);
+  ctx.setTransform(d, 0, 0, d, 0, 0);
+  redraw();
+}
+addEventListener("resize", fit);
+
+function paper(){
+  const w = cv.clientWidth, h = cv.clientHeight;
+  ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--paper").trim();
+  ctx.fillRect(0, 0, w, h);
+  // faint grid, so the page reads as something you were issued
+  ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue("--grid").trim();
+  ctx.lineWidth = 1;
+  const g = 26;
+  ctx.beginPath();
+  for(let x = g; x < w; x += g){ ctx.moveTo(x + .5, 0); ctx.lineTo(x + .5, h); }
+  for(let y = g; y < h; y += g){ ctx.moveTo(0, y + .5); ctx.lineTo(w, y + .5); }
+  ctx.stroke();
+}
+
+function drawStroke(s){
+  if(s.pts.length < 2) {
+    ctx.fillStyle = s.mode === "erase" ? getComputedStyle(document.documentElement).getPropertyValue("--paper").trim() : "#f0d9a8";
+    ctx.beginPath(); ctx.arc(s.pts[0].x, s.pts[0].y, s.w/2, 0, Math.PI*2); ctx.fill();
+    return;
+  }
+  ctx.lineCap = "round"; ctx.lineJoin = "round";
+  ctx.strokeStyle = s.mode === "erase"
+    ? getComputedStyle(document.documentElement).getPropertyValue("--paper").trim()
+    : "#f0d9a8";
+  ctx.lineWidth = s.mode === "erase" ? s.w * 5 : s.w;
+  ctx.beginPath();
+  ctx.moveTo(s.pts[0].x, s.pts[0].y);
+  for(let i = 1; i < s.pts.length - 1; i++){
+    const a = s.pts[i], b = s.pts[i+1];
+    ctx.quadraticCurveTo(a.x, a.y, (a.x+b.x)/2, (a.y+b.y)/2);   // smoothing
+  }
+  const last = s.pts[s.pts.length-1];
+  ctx.lineTo(last.x, last.y);
+  ctx.stroke();
+}
+
+function redraw(){
+  paper();
+  for(const s of pages[page]) drawStroke(s);
+  $("pno").textContent = page + 1;
+  $("ptot").textContent = pages.length;
+  $("strokes").textContent = pages[page].length;
+}
+
+function pt(e){
+  const r = cv.getBoundingClientRect();
+  return { x: e.clientX - r.left, y: e.clientY - r.top };
+}
+cv.addEventListener("pointerdown", e => {
+  cv.setPointerCapture(e.pointerId);
+  drawing = true;
+  cur = { w: size, mode: tool === "eraser" ? "erase" : "pen", pts: [pt(e)] };
+  pages[page].push(cur);
+  redraw();
+});
+cv.addEventListener("pointermove", e => {
+  if(!drawing) return;
+  const p = pt(e), last = cur.pts[cur.pts.length-1];
+  if(Math.hypot(p.x-last.x, p.y-last.y) < 1.1) return;    // thin out jitter
+  cur.pts.push(p);
+  redraw();
+});
+addEventListener("pointerup", () => { if(drawing){ drawing = false; cur = null; save(); } });
+
+$("pen").addEventListener("click", () => setTool("pen"));
+$("eraser").addEventListener("click", () => setTool("eraser"));
+function setTool(t){
+  tool = t;
+  $("pen").classList.toggle("on", t === "pen");
+  $("eraser").classList.toggle("on", t === "eraser");
+}
+$("undo").addEventListener("click", () => { pages[page].pop(); redraw(); save(); });
+$("clear").addEventListener("click", () => { pages[page] = []; redraw(); save(); });
+$("prev").addEventListener("click", () => { if(page > 0){ page--; redraw(); } });
+$("next").addEventListener("click", () => {
+  page++;
+  if(page >= pages.length) pages.push([]);
+  redraw(); save();
+});
+addEventListener("keydown", e => {
+  if((e.ctrlKey||e.metaKey) && e.key === "z"){ pages[page].pop(); redraw(); save(); e.preventDefault(); }
+  if(e.key === "e") setTool("eraser");
+  if(e.key === "p") setTool("pen");
+  if(e.key === "PageDown") $("next").click();
+  if(e.key === "PageUp") $("prev").click();
+});
+
+function save(){
+  try{
+    localStorage.setItem("parity.notebook", JSON.stringify(pages));
+    $("saved").textContent = "saved locally · " + JSON.stringify(pages).length + " bytes";
+  }catch(err){ $("saved").textContent = "could not save"; }
+}
+function load(){
+  try{
+    const raw = localStorage.getItem("parity.notebook");
+    if(raw){ pages = JSON.parse(raw); if(!pages.length) pages = [[]]; }
+  }catch(err){ pages = [[]]; }
+}
+
+load();
+fit();
+
+// ?demo=1 draws a sample page so the thing is legible in a screenshot
+if(new URLSearchParams(location.search).get("demo") === "1"){
+  const hex = (cx, cy, r) => {
+    const pts = [];
+    for(let i = 0; i <= 6; i++){
+      const a = Math.PI/180*(60*i - 30);
+      pts.push({x: cx + r*Math.cos(a) + (Math.random()-.5)*3, y: cy + r*Math.sin(a) + (Math.random()-.5)*3});
+    }
+    return {w: 2.2, mode: "pen", pts};
+  };
+  const line = (x1,y1,x2,y2) => ({w:1.4, mode:"pen", pts:[{x:x1,y:y1},{x:(x1+x2)/2+2,y:(y1+y2)/2-2},{x:x2,y:y2}]});
+  const scrawl = (x,y,n) => {
+    const pts=[]; for(let i=0;i<n;i++) pts.push({x:x+i*4.5+(Math.random()-.5)*2, y:y+Math.sin(i*1.7)*3});
+    return {w:1.8, mode:"pen", pts};
+  };
+  pages[0] = [
+    hex(210,190,58), hex(340,265,58), hex(210,340,58), hex(470,190,58),
+    line(258,215,300,240), line(258,315,300,290), line(388,240,430,215),
+    scrawl(178,186,7), scrawl(308,262,7), scrawl(438,186,9),
+    scrawl(150,430,14), scrawl(150,452,11), scrawl(150,474,16),
+    hex(620,300,44),
+    scrawl(560,120,22), scrawl(560,142,18),
+  ];
+  redraw();
+}
+})();
+</script>
