@@ -21,8 +21,8 @@
 <canvas id="cv"></canvas>
 <div class="hud">
   PARITY &mdash; ROOM STUDY<br>
-  <b>W A S D</b> move &nbsp; <b>MOUSE</b> look &nbsp; <b>SHIFT</b> hurry &nbsp; <b>ESC</b> release<br>
-  <span id="loc"></span>
+  <b>W A S D</b> move &nbsp; <b>MOUSE</b> or <b>ARROWS</b> look &nbsp; <b>SHIFT</b> hurry &nbsp; <b>ESC</b> release<br>
+  <span id="loc"></span><br><span id="note" style="color:#c9873a"></span>
 </div>
 <div class="tag">art-direction target for milestone M3</div>
 <div class="start" id="start"><div>
@@ -30,6 +30,7 @@
   <p>Three hexagonal cells of the facility, built from the same room graph the model
      plays on. Low-poly concrete, one light source, and a retro pass over the top.</p>
   <p>This is the visual target for the first-person build &mdash; not the game.</p>
+  <p style="margin-top:14px">If your browser blocks mouse capture, drag to look or use the arrow keys.</p>
   <div class="go">CLICK TO ENTER</div>
 </div></div>
 
@@ -241,19 +242,48 @@ gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 // ---------------------------------------------------------------- camera
 const cam = { x:0, y:1.62, z:0, yaw:-0.6, pitch:0.02, bob:0 };
 const keys = {};
-addEventListener("keydown", e => { keys[e.code]=true; });
+addEventListener("keydown", e => { keys[e.code]=true;
+  if(e.code.startsWith("Arrow")) e.preventDefault(); });
 addEventListener("keyup",   e => { keys[e.code]=false; });
 
+// Three ways to look around, because pointer lock is unreliable: Firefox and
+// LibreWolf routinely refuse it on file:// URLs and the rejection is silent.
+// Locked mouse if we can get it, click-drag if we cannot, arrow keys always.
 const startEl = document.getElementById("start");
-startEl.addEventListener("click", () => cv.requestPointerLock());
+const note = document.getElementById("note");
+let locked = false, dragging = false;
+
+function tryLock(){
+  startEl.style.display = "none";           // enter regardless of whether lock works
+  const r = cv.requestPointerLock && cv.requestPointerLock();
+  if(r && typeof r.catch === "function") r.catch(() => { locked = false; showFallback(); });
+  setTimeout(() => { if(document.pointerLockElement !== cv) showFallback(); }, 350);
+}
+function showFallback(){
+  note.textContent = "mouse capture unavailable — DRAG to look, or use ARROW KEYS";
+}
+startEl.addEventListener("click", tryLock);
+cv.addEventListener("click", () => { if(!locked && !dragging) tryLock(); });
+
 document.addEventListener("pointerlockchange", () => {
-  startEl.style.display = document.pointerLockElement === cv ? "none" : "grid";
+  locked = document.pointerLockElement === cv;
+  if(locked) note.textContent = "";
 });
-addEventListener("mousemove", e => {
-  if(document.pointerLockElement !== cv) return;
-  cam.yaw   -= e.movementX * 0.0022;
-  cam.pitch -= e.movementY * 0.0022;
+document.addEventListener("pointerlockerror", showFallback);
+
+cv.addEventListener("mousedown", e => { if(!locked){ dragging = true; e.preventDefault(); } });
+addEventListener("mouseup", () => { dragging = false; });
+cv.addEventListener("mouseleave", () => { dragging = false; });
+cv.addEventListener("contextmenu", e => e.preventDefault());
+
+function look(dx, dy){
+  cam.yaw   -= dx * 0.0022;
+  cam.pitch -= dy * 0.0022;
   cam.pitch = Math.max(-1.35, Math.min(1.35, cam.pitch));
+}
+addEventListener("mousemove", e => {
+  if(locked) look(e.movementX || 0, e.movementY || 0);
+  else if(dragging) look(e.movementX || 0, e.movementY || 0);
 });
 
 function insideFacility(x, z){
@@ -268,6 +298,12 @@ function insideFacility(x, z){
 let last = performance.now(), t = 0;
 function frame(now){
   const dt = Math.min((now-last)/1000, 0.05); last = now; t += dt;
+
+  const turn = 1.9 * dt;
+  if(keys.ArrowLeft)  cam.yaw += turn;
+  if(keys.ArrowRight) cam.yaw -= turn;
+  if(keys.ArrowUp)    cam.pitch = Math.min(1.35, cam.pitch + turn*0.7);
+  if(keys.ArrowDown)  cam.pitch = Math.max(-1.35, cam.pitch - turn*0.7);
 
   const sp = (keys.ShiftLeft||keys.ShiftRight ? 4.4 : 2.3) * dt;
   const fx = Math.sin(cam.yaw), fz = Math.cos(cam.yaw);
