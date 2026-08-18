@@ -13,7 +13,8 @@ and quietly degrading the information you have come to depend on.
 | `docs/PARITY-review-deck.pptx` | 22-slide review deck, structured to the marking rubric |
 | `docs/PARITY-project-report.pdf` | Full project report with figures and 22 references |
 | `docs/PARITY-project-report.md` | Same report, source form |
-| `demo/parity-demo.html` | **Playable demo — open in any browser, no server, no internet** |
+| `demo/parity-demo.html` | **Playable model demo — any browser, no server, no internet** |
+| `demo/parity-room.html` | **Walkable 3D room study — WASD + mouse, hand-written WebGL, no engine** |
 | `out/*.png` | Result figures and architecture diagram |
 | `out/metrics.json` | Raw numbers behind every figure |
 

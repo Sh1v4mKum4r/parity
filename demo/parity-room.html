@@ -1,0 +1,333 @@
+<title>Parity Room Study</title>
+<style>
+  :root{ --ink:#e8dcc4; --muted:#8a7f6a; --amber:#ffb545; --line:#2e2920;
+         --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:#080706;color:var(--ink);font-family:var(--mono);overflow:hidden}
+  #cv{display:block;width:100vw;height:100vh;cursor:crosshair}
+  .hud{position:fixed;left:18px;top:16px;font-size:11px;line-height:1.6;color:var(--muted);
+       text-shadow:0 1px 3px #000;pointer-events:none;letter-spacing:.04em}
+  .hud b{color:var(--amber);font-weight:400}
+  .start{position:fixed;inset:0;display:grid;place-items:center;background:rgba(8,7,6,.86);
+         text-align:center;cursor:pointer;z-index:5}
+  .start div{max-width:44ch}
+  .start h1{font-size:19px;letter-spacing:.24em;color:var(--amber);margin:0 0 14px;font-weight:700}
+  .start p{font-size:12px;color:var(--muted);line-height:1.75;margin:0 0 8px}
+  .start .go{margin-top:18px;font-size:11px;color:var(--ink);border:1px solid var(--line);
+              padding:9px 14px;display:inline-block;letter-spacing:.12em}
+  .tag{position:fixed;right:18px;bottom:14px;font-size:10px;color:#4a453b;letter-spacing:.1em}
+</style>
+
+<canvas id="cv"></canvas>
+<div class="hud">
+  PARITY &mdash; ROOM STUDY<br>
+  <b>W A S D</b> move &nbsp; <b>MOUSE</b> look &nbsp; <b>SHIFT</b> hurry &nbsp; <b>ESC</b> release<br>
+  <span id="loc"></span>
+</div>
+<div class="tag">art-direction target for milestone M3</div>
+<div class="start" id="start"><div>
+  <h1>P A R I T Y</h1>
+  <p>Three hexagonal cells of the facility, built from the same room graph the model
+     plays on. Low-poly concrete, one light source, and a retro pass over the top.</p>
+  <p>This is the visual target for the first-person build &mdash; not the game.</p>
+  <div class="go">CLICK TO ENTER</div>
+</div></div>
+
+<script>
+(() => {
+"use strict";
+const cv = document.getElementById("cv");
+const gl = cv.getContext("webgl2", {antialias:false, alpha:false});
+if(!gl){ document.body.innerHTML = "<p style='padding:40px;font-family:monospace'>WebGL2 unavailable.</p>"; return; }
+
+// ---------------------------------------------------------------- math
+const V = {
+  sub:(a,b)=>[a[0]-b[0],a[1]-b[1],a[2]-b[2]],
+  cross:(a,b)=>[a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]],
+  norm:a=>{const l=Math.hypot(a[0],a[1],a[2])||1; return [a[0]/l,a[1]/l,a[2]/l];}
+};
+function perspective(fovy, asp, n, f){
+  const t = 1/Math.tan(fovy/2);
+  return [t/asp,0,0,0, 0,t,0,0, 0,0,(f+n)/(n-f),-1, 0,0,2*f*n/(n-f),0];
+}
+function lookAt(eye, ctr, up){
+  const z = V.norm(V.sub(eye,ctr)), x = V.norm(V.cross(up,z)), y = V.cross(z,x);
+  return [x[0],y[0],z[0],0, x[1],y[1],z[1],0, x[2],y[2],z[2],0,
+    -(x[0]*eye[0]+x[1]*eye[1]+x[2]*eye[2]),
+    -(y[0]*eye[0]+y[1]*eye[1]+y[2]*eye[2]),
+    -(z[0]*eye[0]+z[1]*eye[1]+z[2]*eye[2]), 1];
+}
+function mul(a,b){
+  const o = new Array(16);
+  for(let i=0;i<4;i++) for(let j=0;j<4;j++){
+    let s=0; for(let k=0;k<4;k++) s += a[k*4+j]*b[i*4+k];
+    o[i*4+j]=s;
+  }
+  return o;
+}
+
+// ---------------------------------------------------------------- geometry
+// Flat-top hexagonal cells. Each side is either a doorway (to a neighbouring
+// cell) or solid wall -- which is exactly the room-graph the predictor plays on,
+// given physical form. Side count is the difficulty setting.
+const R = 4.6, H = 3.5, DOOR_W = 1.5, DOOR_H = 2.35;
+const CELLS = [[0,0],[1,0],[0,1]];
+const key = (q,r) => q+","+r;
+const has = (q,r) => CELLS.some(c => c[0]===q && c[1]===r);
+const NB = [[1,0],[0,1],[-1,1],[-1,0],[0,-1],[1,-1]];
+
+function cellCenter(q,r){ return [R*1.732*(q + r/2), 0, R*1.5*r]; }
+
+const pos=[], nrm=[], shade=[];
+function tri(a,b,c,s,forceN){
+  const n = forceN || V.norm(V.cross(V.sub(b,a), V.sub(c,a)));
+  for(const p of [a,b,c]){ pos.push(p[0],p[1],p[2]); nrm.push(n[0],n[1],n[2]); shade.push(s); }
+}
+function quad(a,b,c,d,s){ tri(a,b,c,s); tri(a,c,d,s); }
+
+function corner(cx,cz,i){
+  const ang = Math.PI/180*(60*i - 30);
+  return [cx + R*Math.cos(ang), 0, cz + R*Math.sin(ang)];
+}
+
+for(const [q,r] of CELLS){
+  const [cx,,cz] = cellCenter(q,r);
+  for(let i=0;i<6;i++){
+    const a = corner(cx,cz,i), b = corner(cx,cz,(i+1)%6);
+    // floor + ceiling fans
+    tri([cx,0,cz], a, b, 0.42, [0,1,0]);
+    tri([cx,H,cz], [b[0],H,b[2]], [a[0],H,a[2]], 0.20, [0,-1,0]);
+
+    const nb = NB[i];
+    const open = has(q+nb[0], r+nb[1]);
+    if(!open){
+      quad([a[0],0,a[2]],[b[0],0,b[2]],[b[0],H,b[2]],[a[0],H,a[2]], 0.52);
+    } else {
+      // wall with a doorway punched through it
+      const mx=(a[0]+b[0])/2, mz=(a[2]+b[2])/2;
+      const dx=(b[0]-a[0]), dz=(b[2]-a[2]);
+      const len=Math.hypot(dx,dz), ux=dx/len, uz=dz/len;
+      const hw=DOOR_W/2;
+      const l1=[mx-ux*hw, 0, mz-uz*hw], r1=[mx+ux*hw, 0, mz+uz*hw];
+      quad([a[0],0,a[2]], l1, [l1[0],H,l1[2]], [a[0],H,a[2]], 0.52);
+      quad(r1, [b[0],0,b[2]], [b[0],H,b[2]], [r1[0],H,r1[2]], 0.52);
+      quad([l1[0],DOOR_H,l1[2]], [r1[0],DOOR_H,r1[2]], [r1[0],H,r1[2]], [l1[0],H,l1[2]], 0.46);
+      // door jambs, so the opening reads as built rather than cut
+      const jd = 0.22;
+      quad([l1[0],0,l1[2]], [l1[0]-uz*jd,0,l1[2]+ux*jd], [l1[0]-uz*jd,DOOR_H,l1[2]+ux*jd], [l1[0],DOOR_H,l1[2]], 0.62);
+      quad([r1[0]-uz*jd,0,r1[2]+ux*jd], [r1[0],0,r1[2]], [r1[0],DOOR_H,r1[2]], [r1[0]-uz*jd,DOOR_H,r1[2]+ux*jd], 0.62);
+    }
+  }
+  // a low plinth in the middle of each cell -- something for the eye to read scale against
+  const s=0.85, hgt=0.62;
+  const c=[cx,0,cz];
+  const p0=[c[0]-s,0,c[2]-s], p1=[c[0]+s,0,c[2]-s], p2=[c[0]+s,0,c[2]+s], p3=[c[0]-s,0,c[2]+s];
+  quad([p0[0],hgt,p0[2]],[p1[0],hgt,p1[2]],[p2[0],hgt,p2[2]],[p3[0],hgt,p3[2]], 0.44);
+  quad(p0,p1,[p1[0],hgt,p1[2]],[p0[0],hgt,p0[2]], 0.40);
+  quad(p1,p2,[p2[0],hgt,p2[2]],[p1[0],hgt,p1[2]], 0.40);
+  quad(p2,p3,[p3[0],hgt,p3[2]],[p2[0],hgt,p2[2]], 0.40);
+  quad(p3,p0,[p0[0],hgt,p0[2]],[p3[0],hgt,p3[2]], 0.40);
+}
+
+// ---------------------------------------------------------------- shaders
+function sh(type, src){
+  const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
+  if(!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
+  return s;
+}
+function prog(vs, fs){
+  const p = gl.createProgram();
+  gl.attachShader(p, sh(gl.VERTEX_SHADER, vs)); gl.attachShader(p, sh(gl.FRAGMENT_SHADER, fs));
+  gl.linkProgram(p);
+  if(!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+  return p;
+}
+
+const scene = prog(`#version 300 es
+in vec3 aPos; in vec3 aNrm; in float aShade;
+uniform mat4 uVP;
+out vec3 vPos; out vec3 vNrm; out float vShade;
+void main(){ vPos=aPos; vNrm=aNrm; vShade=aShade; gl_Position = uVP * vec4(aPos,1.0); }`,
+`#version 300 es
+precision highp float;
+in vec3 vPos; in vec3 vNrm; in float vShade;
+uniform vec3 uEye; uniform vec3 uDir;
+out vec4 frag;
+void main(){
+  vec3 d = vPos - uEye;
+  float dist = length(d);
+  vec3 L = d / max(dist, 0.0001);
+  // handheld light: a tight cone with a soft falloff, the only real source
+  float cone = dot(L, normalize(uDir));
+  float spot = smoothstep(0.72, 0.955, cone);
+  float atten = 1.0 / (1.0 + 0.11*dist + 0.026*dist*dist);
+  vec3 N = normalize(vNrm);
+  if(dot(N, -L) < 0.0) N = -N;          // two-sided: never a black surface
+  float lambert = max(dot(N, -L), 0.0);
+  float spill = smoothstep(0.05, 0.75, cone) * atten * lambert * 0.85;  // torches spill
+  float lit = spot * atten * lambert * 5.0 + spill;
+  float ambient = 0.072 + 0.055 * lambert;      // enough to read on a projector
+  vec3 concrete = vec3(0.74, 0.72, 0.68) * vShade;
+  vec3 col = concrete * (lit + ambient);
+  col += vec3(1.0, 0.86, 0.62) * lit * 0.16;    // warm tungsten bias
+  float fog = 1.0 - exp(-dist * 0.072);
+  col = mix(col, vec3(0.020, 0.019, 0.017), fog);
+  frag = vec4(col, 1.0);
+}`);
+
+// retro pass: quantise, dither, vignette, scanline -- the whole art budget
+const post = prog(`#version 300 es
+in vec2 aP; out vec2 vUv;
+void main(){ vUv = aP*0.5+0.5; gl_Position = vec4(aP,0.0,1.0); }`,
+`#version 300 es
+precision highp float;
+in vec2 vUv; uniform sampler2D uTex; uniform vec2 uRes; uniform float uTime;
+out vec4 frag;
+float bayer(vec2 p){
+  int x = int(mod(p.x,4.0)), y = int(mod(p.y,4.0));
+  int i = y*4+x;
+  float m[16] = float[16](0.,8.,2.,10., 12.,4.,14.,6., 3.,11.,1.,9., 15.,7.,13.,5.);
+  return m[i]/16.0 - 0.5;
+}
+void main(){
+  vec3 c = texture(uTex, vUv).rgb;
+  vec2 px = vUv * uRes;
+  c += bayer(px) * 0.055;                        // ordered dither before quantising
+  float levels = 22.0;
+  c = floor(c * levels + 0.5) / levels;
+  float d = distance(vUv, vec2(0.5));
+  c *= smoothstep(1.02, 0.30, d);                // vignette
+  c *= 0.93 + 0.07 * sin(px.y * 3.14159);        // faint scanline
+  frag = vec4(c, 1.0);
+}`);
+
+// ---------------------------------------------------------------- buffers
+const vao = gl.createVertexArray(); gl.bindVertexArray(vao);
+function attrib(p, name, data, size){
+  const b = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, b);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(data), gl.STATIC_DRAW);
+  const loc = gl.getAttribLocation(p, name);
+  gl.enableVertexAttribArray(loc);
+  gl.vertexAttribPointer(loc, size, gl.FLOAT, false, 0, 0);
+}
+attrib(scene, "aPos", pos, 3);
+attrib(scene, "aNrm", nrm, 3);
+attrib(scene, "aShade", shade, 1);
+const VCOUNT = pos.length/3;
+
+const qvao = gl.createVertexArray(); gl.bindVertexArray(qvao);
+attrib(post, "aP", [-1,-1, 3,-1, -1,3], 2);
+gl.bindVertexArray(null);
+
+// low-res render target: the resolution IS the art direction
+const LOW_W = 420, LOW_H = 236;
+const tex = gl.createTexture();
+gl.bindTexture(gl.TEXTURE_2D, tex);
+gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, LOW_W, LOW_H, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+const depth = gl.createRenderbuffer();
+gl.bindRenderbuffer(gl.RENDERBUFFER, depth);
+gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT16, LOW_W, LOW_H);
+const fbo = gl.createFramebuffer();
+gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, depth);
+gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+
+// ---------------------------------------------------------------- camera
+const cam = { x:0, y:1.62, z:0, yaw:-0.6, pitch:0.02, bob:0 };
+const keys = {};
+addEventListener("keydown", e => { keys[e.code]=true; });
+addEventListener("keyup",   e => { keys[e.code]=false; });
+
+const startEl = document.getElementById("start");
+startEl.addEventListener("click", () => cv.requestPointerLock());
+document.addEventListener("pointerlockchange", () => {
+  startEl.style.display = document.pointerLockElement === cv ? "none" : "grid";
+});
+addEventListener("mousemove", e => {
+  if(document.pointerLockElement !== cv) return;
+  cam.yaw   -= e.movementX * 0.0022;
+  cam.pitch -= e.movementY * 0.0022;
+  cam.pitch = Math.max(-1.35, Math.min(1.35, cam.pitch));
+});
+
+function insideFacility(x, z){
+  // stay within the union of hex cells, with a little clearance for the walls
+  for(const [q,r] of CELLS){
+    const [cx,,cz] = cellCenter(q,r);
+    if(Math.hypot(x-cx, z-cz) < R*0.86) return true;
+  }
+  return false;
+}
+
+let last = performance.now(), t = 0;
+function frame(now){
+  const dt = Math.min((now-last)/1000, 0.05); last = now; t += dt;
+
+  const sp = (keys.ShiftLeft||keys.ShiftRight ? 4.4 : 2.3) * dt;
+  const fx = Math.sin(cam.yaw), fz = Math.cos(cam.yaw);
+  let dx=0, dz=0;
+  if(keys.KeyW){ dx -= fx*sp; dz -= fz*sp; }
+  if(keys.KeyS){ dx += fx*sp; dz += fz*sp; }
+  if(keys.KeyA){ dx -= fz*sp; dz += fx*sp; }
+  if(keys.KeyD){ dx += fz*sp; dz -= fx*sp; }
+  if(insideFacility(cam.x+dx, cam.z))   cam.x += dx;
+  if(insideFacility(cam.x, cam.z+dz))   cam.z += dz;
+  const moving = Math.abs(dx)+Math.abs(dz) > 0.0005;
+  cam.bob += moving ? dt*9.5 : 0;
+  const bobY = moving ? Math.sin(cam.bob)*0.035 : 0;
+
+  const eye = [cam.x, cam.y + bobY, cam.z];
+  const dir = [ -Math.sin(cam.yaw)*Math.cos(cam.pitch), Math.sin(cam.pitch), -Math.cos(cam.yaw)*Math.cos(cam.pitch) ];
+  const ctr = [eye[0]+dir[0], eye[1]+dir[1], eye[2]+dir[2]];
+  const VP = mul(perspective(1.16, LOW_W/LOW_H, 0.08, 90), lookAt(eye, ctr, [0,1,0]));
+
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+  gl.viewport(0,0,LOW_W,LOW_H);
+  gl.enable(gl.DEPTH_TEST); gl.disable(gl.CULL_FACE);
+  gl.clearColor(0.016,0.015,0.014,1); gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+  gl.useProgram(scene);
+  gl.uniformMatrix4fv(gl.getUniformLocation(scene,"uVP"), false, new Float32Array(VP));
+  gl.uniform3fv(gl.getUniformLocation(scene,"uEye"), new Float32Array(eye));
+  gl.uniform3fv(gl.getUniformLocation(scene,"uDir"), new Float32Array(dir));
+  gl.bindVertexArray(vao);
+  gl.drawArrays(gl.TRIANGLES, 0, VCOUNT);
+
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  const w = cv.clientWidth, h = cv.clientHeight;
+  if(cv.width !== w || cv.height !== h){ cv.width = w; cv.height = h; }
+  gl.viewport(0,0,cv.width,cv.height);
+  gl.disable(gl.DEPTH_TEST); gl.disable(gl.CULL_FACE);
+  gl.useProgram(post);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.uniform1i(gl.getUniformLocation(post,"uTex"), 0);
+  gl.uniform2f(gl.getUniformLocation(post,"uRes"), LOW_W, LOW_H);
+  gl.uniform1f(gl.getUniformLocation(post,"uTime"), t);
+  gl.bindVertexArray(qvao);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+  let near = "—";
+  let best = 1e9;
+  CELLS.forEach(([q,r], i) => {
+    const [cx,,cz] = cellCenter(q,r);
+    const d = Math.hypot(cam.x-cx, cam.z-cz);
+    if(d < best){ best = d; near = "ABC"[i]; }
+  });
+  document.getElementById("loc").textContent = "CELL " + near + "  ·  3 hexagonal cells  ·  420×236 internal";
+
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+// ?shot=1 drops the overlay for screenshots and stills
+if(new URLSearchParams(location.search).get("shot") === "1"){
+  startEl.style.display = "none";
+  cam.x = 0.4; cam.z = 3.4; cam.yaw = -0.28; cam.pitch = -0.04;
+}
+})();
+</script>

@@ -122,7 +122,7 @@ table(s, [
     ["Literature review (min. 15 recent papers)", "Sections 4–7", "22 works, 20 from 2023 or later"],
     ["Design of proposed methodology", "Sections 8–11", "Formal model + evaluation protocol"],
     ["Module description / system design", "Sections 12–13", "8 modules, implemented and tested"],
-    ["Beyond the rubric", "Sections 14–24", "Ten experiments, 9 invariants, a live demo"],
+    ["Beyond the rubric", "Sections 14–25", "Ten experiments, 9 invariants, two live demos"],
 ], col_w=[4.3, 4.0, 3.6], size=12.5)
 
 # ---------------------------------------------------------------- 3 domain
@@ -479,8 +479,18 @@ tb(s, 1.05, 5.24, 11.3, 1.1,
    size=15, line=1.4, space=4)
 
 
+# ---------------------------------------------------------------- room study
+s = slide(); header(s, "24 · The look", "A walkable room study, running in the browser")
+picture(s, "fig_room.png", 2.85, 1.85, 7.7)
+tb(s, 0.72, 6.15, 11.9, 1.05,
+   "Three hexagonal cells built from the same room graph the model plays on — low-poly concrete, a single "
+   "handheld light, heavy fog, and a retro pass (420x236 internal resolution, ordered dither, colour "
+   "quantisation, vignette). Hand-written WebGL, no engine and no libraries, so it runs offline in any browser. "
+   "This is the art-direction target for M3, not the game.", size=12.5, color=MUT, line=1.3)
+
+
 # ---------------------------------------------------------------- 21 roadmap
-s = slide(); header(s, "24 · Roadmap", "Three of nine milestones complete")
+s = slide(); header(s, "25 · Roadmap", "Three of nine milestones complete")
 table(s, [
     ["Milestone", "Deliverable", "State"],
     ["M0", "Headless simulation core, telemetry, bot harness", "Complete"],
@@ -609,6 +619,11 @@ NOTES = {
      "player (no leakage). Offer to run it live — it takes seconds.",
  25: "Run the demo. Press auto-play and talk over it. Point at the belief panel, then the live "
      "accuracy comparison, then the learned-rule readout, then the counter-move counters.",
+ 25: "Walk through it. Say what it is honestly: an art-direction study, not the game — "
+     "hand-written WebGL so it runs offline on any laptop with no engine installed. Point out "
+     "that the hexagonal cells ARE the room graph the model plays on, and that side count is "
+     "the difficulty setting. The whole look is darkness, fog and a post-process pass, chosen "
+     "because it minimises modelling cost.",
  26: "M0 to M2 done, M3 next; the 3D game does not exist yet. M6 to M8 are specified from the "
      "design work: door sensors and partial observation, polygonal room tiles where side count "
      "IS the difficulty setting, and the outbound register the AI can tamper with before you "

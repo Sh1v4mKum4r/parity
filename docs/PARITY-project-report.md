@@ -550,6 +550,24 @@ whenever belief drops below the threshold.
 
 ---
 
+### 5.11 Art direction: a walkable room study
+
+![Three hexagonal cells, rendered in hand-written WebGL](../out/fig_room.png)
+
+A second demo renders three hexagonal cells of the facility in hand-written WebGL —
+no engine, no libraries, running offline in any browser. It exists to make the art
+direction concrete rather than described: low-poly concrete built from the same room
+graph the predictor plays on, a single handheld light, heavy fog, and a retro pass
+(420x236 internal resolution, ordered dithering, colour quantisation, vignette).
+
+The geometry is the design: hexagonal cells whose sides are either doorways or walls,
+which is the room graph given physical form. Side count is the difficulty setting —
+fewer sides means fewer doors, so the player is easier to predict but has fewer
+escape routes.
+
+This is the target for milestone M3. **It is a study, not the game**: there is no
+entity in it, no clock, and no notebook.
+
 ## 6. Roadmap
 
 | Milestone | Deliverable |
