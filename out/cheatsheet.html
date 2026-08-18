@@ -1,0 +1,116 @@
+<!doctype html><html><head><meta charset="utf-8"><title>PARITY — Review Cheat Sheet</title>
+<style>
+@page { size: A4; margin: 14mm 13mm; }
+body { font-family: "Helvetica Neue", Arial, sans-serif; font-size: 9.2pt; line-height: 1.42; color:#16181a; margin:0; }
+h1 { font-size: 16pt; margin:0 0 1pt; letter-spacing:-0.01em; }
+.sub { color:#6b7178; font-size:9pt; margin:0 0 9pt; }
+h2 { font-size:10pt; margin:12pt 0 4pt; padding-bottom:2.5pt; border-bottom:1.2pt solid #16181a; }
+table { width:100%; border-collapse:collapse; margin:3pt 0 6pt; font-size:8.6pt; }
+th { text-align:left; font-size:7.4pt; text-transform:uppercase; letter-spacing:.06em; color:#6b7178;
+     border-bottom:1pt solid #16181a; padding:2.5pt 5pt 2.5pt 0; }
+td { border-bottom:.5pt solid #dfe3e7; padding:2.5pt 5pt 2.5pt 0; vertical-align:top; }
+.q { font-weight:700; margin:6pt 0 1pt; }
+.a { margin:0 0 3pt; color:#23262a; }
+.box { border:1pt solid #2a78d6; background:#f1f6fc; padding:6pt 8pt; margin:5pt 0; }
+.warn { border-color:#eb6834; background:#fff6f0; }
+.two { column-count:2; column-gap:14pt; }
+strong.k { color:#2a78d6; }
+</style></head><body>
+
+<h1>PARITY — review cheat sheet</h1>
+<p class="sub">Adaptive horror driven by online player-trajectory prediction · 19 August 2026</p>
+
+<div class="box"><strong>The 40-second version.</strong> Horror games die when the player learns them. Existing
+antagonists are static (learnable, stops being scary) or random (unlearnable, feels unfair). PARITY builds an
+online behavioural model of the individual player — a variable-order Markov model over their route through a
+room graph — and uses it to intercept where they are going and to poison the information they depend on. The
+model is the deliverable; the game makes it legible.</div>
+
+<h2>Numbers to know cold</h2>
+<table>
+<tr><th>Result</th><th>Value</th><th>The point</th></tr>
+<tr><td>Top-1 next-move accuracy, habitual player</td>
+    <td>60.5% vs 46.5% (order-1) vs 30.5% (none)</td>
+    <td>The model learns routes</td></tr>
+<tr><td>Same, random player <em>(the control)</em></td>
+    <td>26.7% vs 25.9% vs 26.9%</td>
+    <td><strong>Identical — no leakage</strong></td></tr>
+<tr><td>Predicting “will they stay put?”</td>
+    <td>70% vs 54% baseline; 100% in empty rooms</td>
+    <td>It learned where you stop to write</td></tr>
+<tr><td>Captures / 1000 moves</td>
+    <td>random 111 · hub-camp 265 · order-1 305 · VOMM 319</td>
+    <td>Any model beats none; models are close</td></tr>
+<tr><td>World editing (no entity)</td>
+    <td>20.9 → 32.3 moves per objective lap</td>
+    <td><strong>+54% cost</strong>, no soft-locks</td></tr>
+<tr><td>Advantage over hub-camping vs facility size</td>
+    <td>1.15× at 10 rooms → 1.57× at 32</td>
+    <td>Prediction matters more at scale</td></tr>
+<tr><td>Evasive player (declines 35% of windows)</td>
+    <td>capture risk −1.3%; model accuracy −4.6 pts</td>
+    <td><strong>Negative result</strong> — motivates M6</td></tr>
+</table>
+<p style="font-size:8.4pt;color:#6b7178;margin:0">10 rooms, 1200 windows × 12 seeds, prequential. 9 invariants pass over 25 generated facilities.</p>
+
+<h2>Questions you will get</h2>
+
+<p class="q">What is a VOMM?</p>
+<p class="a">Variable-order Markov model. It predicts your next move from your recent path, using as much history as
+it has reliable data for and backing off to less when it doesn't. Order-1 can't represent routes, because a route
+means the same room has different successors depending on how you entered it. Fixed high order can, but never has
+enough data. Variable order gets both.</p>
+
+<p class="q">Isn't this just dynamic difficulty adjustment?</p>
+<p class="a">No. DDA tunes difficulty <em>magnitude</em> — enemy health, encounter budget. This changes <em>where the
+antagonist chooses to be</em>, from a model of the individual. That gap is point 1 of the research gap, across 22 papers.</p>
+
+<p class="q">Why 61% and not higher?</p>
+<p class="a">Because staying put is a legal move. Predicting whether someone moves at all is harder than predicting
+where. An earlier version forbade waiting and scored 90% — that number was inflated against a player who couldn't
+defend, and I corrected it.</p>
+
+<p class="q">Hub-camping gets 265 without any model. Why bother?</p>
+<p class="a">Only on a small map. At 32 rooms the advantage is 1.57× and widening — the ten-room
+result understates prediction's value. I included hub-camping deliberately: a model that can't beat "sit in the
+busiest room" hasn't earned its complexity.</p>
+
+<p class="q">Can the player beat it?</p>
+<p class="a">Not yet, and that's my most useful result. I built a bot to defeat my own AI by waiting. It degrades the
+model's accuracy but barely reduces capture risk, because the antagonist currently observes position perfectly —
+standing still just makes you a stationary target. Next milestone senses the player through door motion-detectors
+instead, which makes it a partially-observed problem and makes waiting a real tactic.</p>
+
+<p class="q">How do you know it isn't cheating / overfitting?</p>
+<p class="a">Two ways. Evaluation is prequential — every prediction is made before its outcome is observed, so there's
+no train/test leakage by construction. And the control: against a random player the model scores identically to no
+model. If it beat the control, something would be leaking.</p>
+
+<p class="q">Where's the game?</p>
+<p class="a">It doesn't exist yet, and I won't claim otherwise. What exists is the simulation core, the model, the
+director, ten experiments and nine invariants — plus a browser demo of the model and a walkable art-direction study.
+The Godot build is milestone M3.</p>
+
+<p class="q">Why Markov and not deep learning?</p>
+<p class="a">Cold start. A horror antagonist has to be interesting in the first two minutes against a player it has
+never seen, with no corpus for that individual. VOMM learns online from the first move, persists across runs, and is
+inspectable — which is what makes the in-game readout possible. A GRU or an STRelay-style architecture is the stretch
+goal, behind the same interface.</p>
+
+<div class="box warn"><strong>Concede these fast, don't defend them.</strong>
+(1) The models are within noise of each other at interception — the clear win is at prediction, not capture rate.
+(2) Five-step lookahead is now slightly worse than one-step, because rollout error compounds at 61% accuracy.
+(3) Dwell rate is a modelling assumption calibrated to ~24% of windows, not measured human behaviour — that's what
+the playtest milestone is for. Owning these reads as rigour; being caught on them doesn't.</div>
+
+<h2>Demo running order</h2>
+<table>
+<tr><th>#</th><th>What</th><th>Say</th></tr>
+<tr><td>1</td><td><code>parity-demo.html?auto=1</code></td><td>“The model, live.” Point at the belief panel, then the
+accuracy comparison against the no-model control, then the learned-rule readout in plain English.</td></tr>
+<tr><td>2</td><td><code>parity-room.html</code></td><td>“The look we're building toward.” Walk one room. Say plainly
+it's an art study, not the game — no entity, no clock, no notebook.</td></tr>
+<tr><td>3</td><td><code>python3 model/test_invariants.py</code></td><td>Offer it if they press on rigour. Nine invariants, a few seconds.</td></tr>
+</table>
+
+</body></html>
