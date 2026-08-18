@@ -10,6 +10,10 @@ from pptx.enum.text import PP_ALIGN
 
 ROOT = Path(__file__).parent.parent
 M = json.loads((ROOT / "out" / "metrics.json").read_text())
+E4 = M["e4_pursuit"]; E5 = M["e5_disruption"]
+E6U, E6S = M["e6_sabotage"], M["e6_sabotage_skewed"]
+R_CTL = E4["vomm"]["per_1000"] / E4["random-walk"]["per_1000"]
+R_HUB = E4["vomm"]["per_1000"] / E4["hub-camp"]["per_1000"]
 
 INK, MUT, ACC, LINE, BG = C(0x16,0x18,0x1a), C(0x6b,0x71,0x78), C(0x2a,0x78,0xd6), C(0xd8,0xdc,0xe0), C(0xfc,0xfc,0xfb)
 GRN, ORG = C(0x1b,0xaf,0x7a), C(0xeb,0x68,0x34)
@@ -115,7 +119,7 @@ table(s, [
     ["Literature review (min. 15 recent papers)", "Sections 4–7", "22 works, 20 from 2023 or later"],
     ["Design of proposed methodology", "Sections 8–11", "Formal model + evaluation protocol"],
     ["Module description / system design", "Sections 12–13", "8 modules, implemented and tested"],
-    ["Beyond the rubric", "Sections 14–17", "Working results and a live demo"],
+    ["Beyond the rubric", "Sections 14–21", "Six experiments, 9 invariants, a live demo"],
 ], col_w=[4.3, 4.0, 3.6], size=12.5)
 
 # ---------------------------------------------------------------- 3 domain
@@ -162,8 +166,9 @@ table(s, [
     ["O3", "Beat a no-model control and an order-1 Markov baseline", "Done"],
     ["O4", "Learn nothing from a random player (no leakage)", "Done"],
     ["O5", "Show better prediction yields a more dangerous antagonist", "Done"],
-    ["O6", "Make the model legible to the player in-game", "Demo built"],
-    ["O7", "Ship the first-person Godot vertical slice", "In progress"],
+    ["O6", "Implement and measure all four Director counter-moves", "Done"],
+    ["O7", "Make the model legible to the player in-game", "Demo built"],
+    ["O8", "Ship the first-person Godot vertical slice", "In progress"],
 ], y=2.95, col_w=[0.65, 9.05, 2.2], size=12.5)
 
 # ---------------------------------------------------------------- 6-9 literature
@@ -268,12 +273,12 @@ tb(s, 0.72, 1.95, 11.9, 0.5,
    "by expected disruption × confidence. The model can be upgraded without re-tuning game feel.",
    size=14.5, color=MUT, line=1.3)
 table(s, [
-    ["Counter-move", "Trigger"],
-    ["Intercept", "High confidence on a specific room — move to meet the player there"],
-    ["Rewire / rotate a room", "High confidence on a transit route — change it before they arrive"],
-    ["Poison a codebook", "A recorded entry the player is predicted to need again"],
-    ["Seal a shortcut", "An edge with high traversal frequency"],
-], y=2.85, col_w=[3.5, 8.4], size=13)
+    ["Counter-move", "Trigger", "Status"],
+    ["Intercept", "High confidence on a specific room — move to meet the player there", "Measured (§14, 16)"],
+    ["Rewire a room ahead", "High confidence on a route — change it before they arrive", "Measured (§17)"],
+    ["Seal a shortcut", "An edge with high traversal frequency", "Measured (§17)"],
+    ["Poison a codebook", "A recorded entry the player is predicted to need again", "Measured (§18)"],
+], y=2.85, col_w=[2.8, 6.9, 2.2], size=12.5)
 tb(s, 0.72, 4.95, 11.9, 0.35, "FAIRNESS CONSTRAINTS", size=10.5, bold=True, color=ORG)
 bullets(s, [
     ("1", "No mutation is ever applied to anything currently visible to the player."),
@@ -333,23 +338,79 @@ tb(s, 0.72, 6.6, 11.9, 0.6,
 
 s = slide(); header(s, "15 · Results — learning speed", "Cold start solved empirically")
 picture(s, "fig_learning.png", 2.27, 1.85, 8.8)
+_c = M["e2_learning"]["curves"]["vomm"]; _w = M["e2_learning"]["window"]
+_plateau = sum(_c[5:15]) / len(_c[5:15])
 tb(s, 0.72, 6.6, 11.9, 0.6,
-   "Rolling top-1 accuracy rises from 48% to 87% within roughly 60 observed moves — under a minute of play.",
-   size=13, color=MUT, line=1.3)
+   f"Rolling top-1 accuracy rises from {_c[0]*100:.0f}% to {_plateau*100:.0f}% within roughly {_w*3} observed "
+   "moves — under a minute of play.", size=13, color=MUT, line=1.3)
 
 s = slide(); header(s, "16 · Results — does prediction matter?", "Embodied pursuit: the entity must intercept, not teleport")
 picture(s, "fig_capture.png", 1.87, 1.95, 9.6)
 tb(s, 0.72, 6.42, 11.9, 0.85,
    "The hub-camping baseline is included deliberately: a model that cannot beat 'sit in the busiest room' has not "
-   "earned its complexity. The proposed director achieves 4.3× the control and 1.7× the strongest non-learning heuristic.",
+   f"earned its complexity. The proposed director achieves {R_CTL:.1f}× the control and {R_HUB:.1f}× the strongest "
+   "non-learning heuristic.",
    size=13, color=MUT, line=1.3)
 
+
+# ---------------------------------------------------------------- world edits
+s = slide(); header(s, "17 · Results — do the world edits matter?", "Interception is only one of four counter-moves")
+picture(s, "fig_disruption.png", 2.5, 1.9, 8.4)
+tb(s, 0.72, 6.05, 11.9, 1.1,
+   f"The entity is removed entirely here, isolating topology mutation. Sealing and rewiring ahead of the player "
+   f"raises the cost of completing an objective by {E5['full-director']['overhead_pct']:.0f}% "
+   f"({E5['no-director']['moves_per_lap']:.1f} to {E5['full-director']['moves_per_lap']:.1f} moves per lap). Every one of the "
+   f"{E5['full-director']['actions']['rewire']} rewires and {E5['full-director']['actions']['seal']} seals passed the reachability "
+   "check — no run was ever soft-locked.", size=13, color=MUT, line=1.3)
+
+# ---------------------------------------------------------------- conditional result
+s = slide(); header(s, "18 · Results — is the sabotage aimed?", "A conditional result, reported as such")
+tb(s, 0.72, 1.95, 11.9, 0.6,
+   "A poisoned codebook only costs the player if they return to it, and costs more the sooner they do. "
+   "Lower is better-aimed. Control: poison a recorded room at random.", size=14, color=MUT, line=1.3)
+table(s, [
+    ["Player's reliance on rooms", "Random targeting", "Model targeting", "Advantage"],
+    ["Uniform — visits every codebook each lap",
+     f"{E6U['random-target']['moves_until_revisit']:.1f}", f"{E6U['model-target']['moves_until_revisit']:.1f}",
+     f"none ({E6U['model-target']['faster_pct']:+.1f}%)"],
+    ["Uneven — leans on some rooms harder",
+     f"{E6S['random-target']['moves_until_revisit']:.1f}", f"{E6S['model-target']['moves_until_revisit']:.1f}",
+     f"{E6S['model-target']['faster_pct']:.0f}% faster"],
+], y=2.85, col_w=[5.0, 2.4, 2.3, 2.2], size=13)
+box = s.shapes.add_shape(1, In(0.72), In(4.3), In(11.9), In(1.75))
+box.fill.solid(); box.fill.fore_color.rgb = C(0xff,0xf6,0xf0); box.line.color.rgb = ORG
+box.line.width = Pt(1); box.shadow.inherit = False
+tb(s, 1.05, 4.55, 11.3, 1.35,
+   "Reported as a negative result under the first condition.\n"
+   "When the player relies on every room equally there is nothing for targeted sabotage to exploit, and model "
+   "targeting performs no better than random. The counter-move earns its place only against a player with uneven "
+   "habits. That is the realistic case — but the claim is conditional and is not overstated.",
+   size=13.5, line=1.32, space=4)
+
+# ---------------------------------------------------------------- verification
+s = slide(); header(s, "19 · Verification", "Nine invariants, asserted over 25 generated facilities")
+table(s, [
+    ["Invariant", "Guards against"],
+    ["Facility connected on construction", "Unplayable generated levels"],
+    ["seal_door never disconnects", "The Director cutting the map in half"],
+    ["rewire never disconnects", "The same, via door relocation"],
+    ["Uplink reachable from every room after mutation", "Soft-locked, unwinnable runs"],
+    ["Bots only move to adjacent rooms", "Silent teleportation corrupting telemetry"],
+    ["Predictor output is a proper distribution", "Malformed probabilities"],
+    ["VOMM approximates uniform on a random player", "Leakage in the evaluation"],
+    ["Director never mutates a visible room", "Fairness rule 1"],
+    ["Director never edits below its confidence gate", "Fairness rule 2"],
+], col_w=[6.4, 5.5], size=12.5, head_size=9)
+tb(s, 0.72, 6.35, 11.9, 0.5, "9 / 9 passing  ·  python3 model/test_invariants.py",
+   size=14, bold=True, color=GRN)
+
 # ---------------------------------------------------------------- 20 demo
-s = slide(); header(s, "17 · Live demonstration", "The full loop, running")
+s = slide(); header(s, "20 · Live demonstration", "The full loop, running")
 bullets(s, [
     ("Room graph —", "live per-room predicted probabilities drawn on the facility."),
     ("Entity —", "moves to intercept where the model points, gated on confidence."),
     ("Codebooks and notebook —", "record entries; the Director silently poisons what you rely on."),
+    ("All four counter-moves —", "intercept, seal, rewire and poison, with a live counter for each."),
     ("Live scoreboard —", "running VOMM accuracy against a no-model control, side by side."),
     ("Learned-rule readout —", "in plain language: 'from E you go to B, 100% of the time, 13 observations'."),
 ], size=15)
@@ -357,13 +418,14 @@ box = s.shapes.add_shape(1, In(0.72), In(5.0), In(11.9), In(1.5))
 box.fill.solid(); box.fill.fore_color.rgb = C(0xf1,0xf6,0xfc); box.line.color.rgb = ACC
 box.line.width = Pt(1); box.shadow.inherit = False
 tb(s, 1.05, 5.24, 11.3, 1.1,
-   "Observed in a 96-move automated session\n"
-   "VOMM 72%  vs.  no-model 31%  —  and 2 of 16 transmitted signals corrupted by sabotage "
-   "the player was never told about.",
+   "Observed in a 126-move automated session\n"
+   "VOMM 74%  vs.  no-model 48%.  The Director sealed 2 doors, rewired 4 rooms and poisoned 10 codebooks — "
+   "corrupting 4 of 19 transmitted signals. The player was never told about any of it.",
    size=15, line=1.4, space=4)
 
+
 # ---------------------------------------------------------------- 21 roadmap
-s = slide(); header(s, "18 · Roadmap", "Three of six milestones complete")
+s = slide(); header(s, "21 · Roadmap", "Three of six milestones complete")
 table(s, [
     ["Milestone", "Deliverable", "State"],
     ["M0", "Headless simulation core, telemetry, bot harness", "Complete"],

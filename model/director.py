@@ -57,3 +57,119 @@ class DegreeCamp:
 
     def choose_ambush(self, history, candidates):
         return self.hub
+
+
+class FullDirector:
+    """The complete counter-move set, with the fairness rules enforced in code.
+
+    Actions: intercept · seal a shortcut · rewire a room ahead · poison a codebook.
+    Each is scored by expected disruption x model confidence; the best scoring
+    action that satisfies the fairness rules is applied.
+
+    Fairness rules (enforced here, not merely documented):
+      1. Nothing currently VISIBLE to the player is ever mutated.
+      2. Below the confidence gate the Director does not edit the world at all --
+         it falls back to conventional hunting.
+      3. Every mutation is applied through Facility, which reverts any edit that
+         breaks connectivity, and is recorded in self.log for replay.
+    """
+    name = "full"
+
+    def __init__(self, model, fac, gate: float = 0.45, cooldown: int = 8):
+        self.model, self.fac = model, fac
+        self.gate, self.cooldown = gate, cooldown
+        self.edge_counts: dict = {}
+        self.room_counts: dict = {}
+        self.last_edit = -10 ** 6
+        self.log: list = []
+        self.poisoned: list = []
+
+    # ---- the Director's own telemetry ----
+    def observe_move(self, a, b):
+        k = (a, b) if a <= b else (b, a)
+        self.edge_counts[k] = self.edge_counts.get(k, 0) + 1
+        self.room_counts[b] = self.room_counts.get(b, 0) + 1
+
+    def confidence(self, history, candidates) -> float:
+        d = self.model.predict(history, candidates)
+        return max(d.values()) if d else 0.0
+
+    def choose_ambush(self, history, candidates):
+        if not candidates:
+            return None
+        d = self.model.predict(history, candidates)
+        room, p = max(d.items(), key=lambda kv: kv[1])
+        return room if p >= self.gate else None
+
+    def visible(self, player) -> set:
+        return {player} | set(self.fac.neighbors(player))
+
+    def _lookahead(self, history, player, depth=3):
+        """Roll the model forward `depth` steps along its own most-likely path.
+
+        Needed because the first predicted room is adjacent to the player and is
+        therefore always visible -- rule 1 forbids editing it. Only rooms further
+        along the predicted route are legal targets.
+        """
+        path, hist, cur = [], list(history), player
+        for _ in range(depth):
+            c = self.fac.neighbors(cur)
+            if not c:
+                break
+            d = self.model.predict(hist, c)
+            cur = max(d.items(), key=lambda kv: kv[1])[0]
+            path.append(cur)
+            hist = hist + [cur]
+        return path
+
+    def maybe_edit(self, t, history, player, recorded=()):
+        """Score every legal counter-move; apply the best. Returns the action or None."""
+        if t - self.last_edit < self.cooldown:
+            return None
+        cands = self.fac.neighbors(player)
+        conf = self.confidence(history, cands)
+        if conf < self.gate:                       # rule 2: unsure -> hunt conventionally
+            return None
+        vis = self.visible(player)                 # rule 1: never touch what they can see
+        options = []
+
+        for (a, b), n in self.edge_counts.items():
+            if a in vis or b in vis:
+                continue
+            if b in self.fac.neighbors(a):
+                options.append((n * conf, "seal", (a, b)))
+
+        path = self._lookahead(history, player)
+        for a, b in zip(path, path[1:]):
+            if a in vis or b in vis or b not in self.fac.neighbors(a):
+                continue
+            spare = [c for c in self.fac.rooms
+                     if c not in vis and c != a and c not in self.fac.neighbors(a)]
+            if spare:
+                new_b = min(spare, key=lambda c: self.room_counts.get(c, 0))
+                options.append((1.6 * self.room_counts.get(b, 0) * conf, "rewire", (a, b, new_b)))
+
+        recent_poison = {r for tt, r in self.poisoned if t - tt < 60}
+        for r in recorded:
+            if r in vis or r in recent_poison:
+                continue
+            options.append((0.8 * self.room_counts.get(r, 0) * conf, "poison", r))
+
+        if not options:
+            return None
+        score, kind, arg = max(options, key=lambda o: o[0])
+        if score <= 0:
+            return None
+
+        ok = False
+        if kind == "seal":
+            ok = self.fac.seal_door(*arg)
+        elif kind == "rewire":
+            ok = self.fac.rewire(*arg)
+        elif kind == "poison":
+            self.poisoned.append((t, arg)); ok = True
+        if not ok:
+            return None
+        self.last_edit = t
+        self.log.append({"t": t, "action": kind, "arg": arg, "confidence": round(conf, 3)})
+        return kind

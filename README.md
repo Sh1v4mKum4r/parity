@@ -39,6 +39,7 @@ model/
   bots.py         scripted players: habitual, explorer, random (the control)
   predictors.py   UniformNeighbour · MarkovOrder1 · VOMM (proposed)
   director.py     turns beliefs into counter-moves; confidence-gated
+  test_invariants.py  9 safety and fairness invariants
   evaluate.py     four experiments, all seeded and prequential
 ```
 
@@ -48,7 +49,7 @@ Prediction accuracy (top-1 next room, 10 rooms, 1200 steps x 12 seeds):
 
 | Player | No model | Order-1 Markov | **VOMM** |
 |---|---|---|---|
-| Habitual | 40.6% | 64.5% | **91.4%** |
+| Habitual | 40.7% | 61.9% | **89.6%** |
 | Explorer | 38.5% | 61.2% | **94.8%** |
 | Random *(control)* | 36.6% | 36.4% | **36.6%** |
 
@@ -60,10 +61,31 @@ Embodied pursuit — an entity that occupies a room and moves one room per step:
 
 | Entity behaviour | Captures / 1000 moves |
 |---|---|
-| Random walk *(control)* | 93 |
-| Camp the busiest junction | 241 |
-| Order-1 Markov director | 377 |
-| **VOMM director** | **399** |
+| Random walk *(control)* | 99 |
+| Camp the busiest junction | 305 |
+| Order-1 Markov director | 350 |
+| **VOMM director** | **364** |
+
+World editing, with the entity removed so topology mutation is isolated:
+
+| Condition | Moves per objective lap |
+|---|---|
+| Facility left alone | 15.7 |
+| **Director sealing and rewiring ahead** | **25.2** (60% more) |
+
+Targeted sabotage is a **conditional** result: it gives no advantage over random
+targeting when the player relies on every room equally, and an 12% advantage when
+their reliance is uneven. Reported as such in the report, section 5.5.
+
+## Verification
+
+```
+python3 model/test_invariants.py     # 9 invariants, 25 generated facilities
+```
+
+Covers connectivity under mutation, objective reachability (no soft-locks),
+distribution well-formedness, absence of leakage on a random player, and both
+Director fairness rules.
 
 ## Status
 

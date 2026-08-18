@@ -89,9 +89,33 @@ def fig_capture(out):
     fig.tight_layout(); fig.savefig(out, dpi=200); plt.close(fig)
 
 
+def fig_disruption(out):
+    d = M["e5_disruption"]
+    labels = ["Facility left alone", "Director sealing and\nrewiring ahead of you"]
+    vals = [d["no-director"]["moves_per_lap"], d["full-director"]["moves_per_lap"]]
+    errs = [d["no-director"]["sd"], d["full-director"]["sd"]]
+    fig, ax = plt.subplots(figsize=(8.2, 3.9))
+    ax.bar([0, 1], vals, width=0.42, color=["#9aa3ab", "#2a78d6"], zorder=3,
+           yerr=errs, ecolor="#6b7178", capsize=5)
+    for x, v in zip([0, 1], vals):
+        ax.text(x, v + 1.4, f"{v:.1f}", ha="center", fontsize=12, fontweight="bold", color=INK)
+    ax.set_xticks([0, 1]); ax.set_xticklabels(labels, fontsize=10)
+    ax.set_ylabel("Moves per objective lap"); ax.set_ylim(0, max(vals) * 1.32)
+    ax.grid(axis="y", color=GRID, lw=0.8, zorder=0); ax.set_axisbelow(True)
+    ax.annotate(f"+{d['full-director']['overhead_pct']:.0f}%",
+                xy=(1, vals[1]), xytext=(1.34, vals[1] * 0.72),
+                fontsize=15, fontweight="bold", color="#2a78d6")
+    a = d["full-director"]["actions"]
+    _finish(ax, "World edits impose a real navigation cost",
+            f"No entity — mutation only. {a['rewire']} rewires, {a['seal']} seals, "
+            f"{a['poison']} poisons across 12 seeds x 1500 moves")
+    fig.tight_layout(); fig.savefig(out, dpi=200); plt.close(fig)
+
+
 if __name__ == "__main__":
     out = ROOT / "out"; out.mkdir(exist_ok=True)
     fig_accuracy(out / "fig_accuracy.png")
     fig_learning(out / "fig_learning.png")
     fig_capture(out / "fig_capture.png")
+    fig_disruption(out / "fig_disruption.png")
     print("figures written:", *[p.name for p in sorted(out.glob("*.png"))])

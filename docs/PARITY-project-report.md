@@ -209,7 +209,8 @@ than fear (§2.5). Three hard invariants:
    conventionally instead of intercepting. It only exploits what it actually knows.
 3. **Solvability invariant** — every topology mutation is checked for graph
    connectivity and objective reachability, and reverted if it would soft-lock the
-   run. Verified by unit test on every mutation.
+   run. Both mutation operators revert any edit that fails this check, and the
+   property is asserted over 25 generated facilities in the invariant suite (§5.6).
 
 Notably, **no signal is emitted when sabotage occurs.** The player's hand-kept
 notebook is the only means of detecting it. Sabotage nonetheless lands almost
@@ -302,10 +303,12 @@ codebook or rotates a room, the notebook does not become corrupted — it become
 |---|---|
 | Facility graph + mutation + connectivity invariant | Implemented, Python |
 | VOMM predictor, baselines, controls | Implemented, Python |
-| Director (intercept + sabotage targeting) | Implemented, Python |
+| Director — all four counter-moves (intercept, seal, rewire, poison) | Implemented, Python |
+| Invariant test suite (9 properties) | Implemented, passing |
 | Bot harness (habitual / explorer / random) | Implemented, Python |
 | Evaluation suite + figures | Implemented, Python |
 | Interactive browser demo (graph, live belief, entity, codebooks, sabotage) | Implemented, JS |
+| Notebook staleness / codebook poisoning in the simulation core | Modelled abstractly; full cipher loop is M4 |
 | Godot first-person vertical slice | Next milestone |
 | Notebook vector editor | Designed, not built |
 
@@ -319,7 +322,7 @@ Facility: 10 rooms. 1200 steps × 12 seeds per condition. Prequential evaluation
 
 | Player | Uniform (no model) | Order-1 Markov | **VOMM (proposed)** |
 |---|---|---|---|
-| Habitual | 40.6% | 64.5% | **91.4%** |
+| Habitual | 40.7% | 61.9% | **89.6%** |
 | Explorer | 38.5% | 61.2% | **94.8%** |
 | Random *(control)* | 36.6% | 36.4% | **36.6%** |
 
@@ -332,7 +335,7 @@ attributable to learned habit, not to leakage.
 
 ### 5.2 Learning speed
 
-Rolling top-1 accuracy against a habitual player rises from **48% to 87% within
+Rolling top-1 accuracy against a habitual player rises from **45% to 89% within
 roughly 60 observed moves** — under a minute of play.
 
 ![Rolling accuracy against observed moves](../out/fig_learning.png)
@@ -346,27 +349,84 @@ Embodied pursuit: the entity occupies a room and moves one room per step — it 
 
 | Entity behaviour | Captures per 1000 player moves |
 |---|---|
-| Random walk *(control)* | 93 |
-| Camp the busiest junction *(strong non-learning heuristic)* | 241 |
-| Order-1 Markov director | 377 |
-| **VOMM director (proposed)** | **399** |
+| Random walk *(control)* | 99 |
+| Camp the busiest junction *(strong non-learning heuristic)* | 305 |
+| Order-1 Markov director | 350 |
+| **VOMM director (proposed)** | **364** |
 
 ![Captures per 1000 moves by entity behaviour](../out/fig_capture.png)
 
 The hub-camping baseline is included deliberately: a model that cannot beat "sit in
 the busiest room" has not earned its complexity. The proposed director achieves
-**4.3× the control** and **1.7× the strongest non-learning heuristic**.
+**3.7× the control** and **1.2× the strongest non-learning heuristic**.
 
-### 5.4 Interactive demonstration
+### 5.4 Do the world-editing counter-moves matter?
+
+Interception is only one of the Director's four moves. This experiment removes the
+entity entirely and isolates topology mutation: the player cycles objective rooms
+while the Director seals and rewires ahead of them.
+
+![Navigation cost with and without world editing](../out/fig_disruption.png)
+
+| Condition | Moves per objective lap |
+|---|---|
+| Facility left alone | 15.7 |
+| **Director sealing and rewiring ahead** | **25.2** |
+
+A **60% increase in the cost of completing an objective**, from
+350 rewires, 55 seals and 335 codebook poisonings across
+12 seeds. Every one of those mutations passed the connectivity and reachability
+check, so no run was ever soft-locked.
+
+### 5.5 Is sabotage aimed, or is it noise? *(a conditional result)*
+
+A poisoned codebook only costs the player if they return to it, and costs them more
+the sooner they do. We measure moves elapsed before the player walks back into a
+poisoned room — lower means better-aimed — against a control that poisons a
+recorded room at random.
+
+| Player's reliance on rooms | Random targeting | Model targeting | Advantage |
+|---|---|---|---|
+| Uniform (visits every codebook each lap) | 6.8 | 6.8 | **none (-0.5%)** |
+| Uneven (leans on some rooms harder) | 8.8 | 7.8 | **12% faster** |
+
+**This is reported as a negative result under the first condition.** When the player
+relies on every room equally, there is nothing for targeted sabotage to exploit and
+model-guided targeting performs no better than random. The counter-move only earns
+its place against a player with uneven habits — which is the realistic case, but the
+claim is conditional and should not be overstated.
+
+### 5.6 Invariant test suite
+
+Nine invariants are asserted over 25 generated facilities and thousands of simulated
+moves (`model/test_invariants.py`, all passing):
+
+| Invariant | Guards against |
+|---|---|
+| Facility connected on construction | Unplayable generated levels |
+| `seal_door` never disconnects | Director cutting the map in half |
+| `rewire` never disconnects | Same, via door relocation |
+| Uplink reachable from every room after mutation | **Soft-locked, unwinnable runs** |
+| Bots only move to adjacent rooms | Silent teleportation corrupting the telemetry |
+| Predictor output is a proper distribution over the candidate set | Malformed probabilities |
+| VOMM ≈ uniform on a random player | **Leakage in the evaluation** |
+| Director never mutates a visible room | Fairness rule 1 |
+| Director never edits below its confidence gate | Fairness rule 2 |
+
+### 5.7 Interactive demonstration
 
 A browser demo runs the full loop live: room graph, per-room predicted
-probabilities, an entity that intercepts on prediction, codebook recording, silent
-sabotage, and signal transmission. It displays running VOMM accuracy against a
+probabilities, an entity that intercepts on prediction, codebook recording, and all
+four Director counter-moves — interception, door sealing, room rewiring and codebook
+poisoning — each with a live counter, and each subject to the same fairness rules as
+the Python implementation (nothing visible is mutated; nothing happens below the
+confidence gate; no edit may disconnect the facility). It displays running VOMM accuracy against a
 no-model control and a plain-language readout of the strongest learned rule
 (e.g. *"from E you go to B 100% of the time, 13 observations"*).
 
-Observed in a 96-move automated session: **VOMM 72% vs. no-model 31%**, with 2 of
-16 transmitted signals corrupted by sabotage the player was never told about.
+Observed in a 126-move automated session: **VOMM 74% vs. no-model 48%**. The
+Director sealed 2 doors, rewired 4 rooms and poisoned 10 codebooks, corrupting 4 of
+19 transmitted signals. The player was told none of it.
 
 ---
 

@@ -116,6 +116,15 @@
         <div class="row"><span>Signals sent</span><span id="s-sent">0</span></div>
         <div class="row"><span>Signals corrupted</span><span id="s-bad">0</span></div>
       </div>
+
+      <div class="card">
+        <h2>Director counter-moves</h2>
+        <div class="row"><span>Doors sealed</span><span id="a-seal">0</span></div>
+        <div class="row"><span>Rooms rewired</span><span id="a-rewire">0</span></div>
+        <div class="row"><span>Codebooks poisoned</span><span id="a-poison">0</span></div>
+        <div class="hint" style="margin-top:7px">Never applied to a room you can see, and never below
+          45% confidence. You are not told when any of this happens.</div>
+      </div>
     </div>
   </div>
 </div>
@@ -250,7 +259,8 @@ function reset(){
   hist = []; notebook = new Map();
   player = R.findIndex(r => r.kind === "comms");
   entity = pick(R.filter(r => r.id !== player)).id;
-  stats = { moves:0, caught:0, sent:0, bad:0, vHit:0, uHit:0, nPred:0 };
+  stats = { moves:0, caught:0, sent:0, bad:0, vHit:0, uHit:0, nPred:0, acts:{seal:0,rewire:0,poison:0} };
+  edgeCount = {}; roomCount = {}; lastEdit = -99;
   newTarget(); logClear();
   say("Facility online. " + KEYWORDS.length + " codebooks distributed. Uplink at room " + R[player].glyph + ".");
   autoRoute = []; autoI = 0; pendingPred = null;
@@ -285,6 +295,7 @@ function move(to){
   if(best === to) stats.vHit++;
   if(pick(cands) === to) stats.uHit++;
 
+  noteMove(player, to);
   model.observe(hist, to);
   hist.push(to); if(hist.length > 8) hist.shift();
   player = to; stats.moves++;
@@ -298,7 +309,7 @@ function move(to){
   }
 
   onEnter();
-  sabotage();
+  directorEdit();
   draw(); ui();
 }
 
@@ -328,18 +339,92 @@ function transmit(){
   }
 }
 
-// ---------- sabotage: silent, and aimed where you are predicted to rely ----------
-function sabotage(){
-  if(stats.moves < 12 || stats.moves % 7 !== 0) return;
-  const recorded = [...notebook.keys()].filter(id => id !== player);
-  if(!recorded.length) return;
-  const dist = model.predict(hist, R[player].nb);
-  let conf = 0; Object.values(dist).forEach(v => conf = Math.max(conf, v));
-  if(conf < 0.5) return;                       // unsure -> hunts conventionally instead
-  const room = R[pick(recorded)];
-  const i = Math.floor(rnd() * 4);
-  room.code = room.code.substring(0,i) + (room.code[i] === "0" ? "1" : "0") + room.code.substring(i+1);
-  // no message. the player is told nothing.
+// ---------- the Director's counter-moves ----------
+// Four moves, scored by expected disruption x confidence, with the same fairness
+// rules as the Python implementation: nothing visible is ever mutated, nothing
+// happens below the confidence gate, and no edit may disconnect the facility.
+const GATE = 0.45, COOLDOWN = 7;
+let edgeCount = {}, roomCount = {}, lastEdit = -99;
+
+function ekey(a,b){ return a < b ? a+"-"+b : b+"-"+a; }
+function noteMove(a,b){
+  edgeCount[ekey(a,b)] = (edgeCount[ekey(a,b)] || 0) + 1;
+  roomCount[b] = (roomCount[b] || 0) + 1;
+}
+function connected(){
+  const seen = new Set([0]), st = [0];
+  while(st.length){ for(const nb of R[st.pop()].nb) if(!seen.has(nb)){ seen.add(nb); st.push(nb); } }
+  return seen.size === R.length;
+}
+function unlink(a,b){ R[a].nb = R[a].nb.filter(x=>x!==b); R[b].nb = R[b].nb.filter(x=>x!==a); }
+function link(a,b){ if(a!==b && !R[a].nb.includes(b)){ R[a].nb.push(b); R[b].nb.push(a); } }
+function sealDoor(a,b){
+  if(!R[a].nb.includes(b)) return false;
+  unlink(a,b);
+  if(!connected()){ link(a,b); return false; }   // reverted -- never soft-lock the run
+  return true;
+}
+function rewireDoor(a,b,nb){
+  if(!R[a].nb.includes(b) || R[a].nb.includes(nb) || nb===a) return false;
+  unlink(a,b); link(a,nb);
+  if(!connected()){ unlink(a,nb); link(a,b); return false; }
+  return true;
+}
+function visibleSet(){ return new Set([player, ...R[player].nb]); }
+function lookahead(depth){
+  const path = []; let h = hist.slice(), cur = player;
+  for(let i=0;i<depth;i++){
+    const c = R[cur].nb; if(!c.length) break;
+    const d = model.predict(h, c);
+    cur = c.reduce((x,y)=> d[y] > d[x] ? y : x, c[0]);
+    path.push(cur); h = h.concat([cur]);
+  }
+  return path;
+}
+
+function directorEdit(){
+  if(stats.moves - lastEdit < COOLDOWN) return;
+  const cands = R[player].nb, dist = model.predict(hist, cands);
+  let conf = 0; cands.forEach(c => conf = Math.max(conf, dist[c] || 0));
+  if(conf < GATE) return;                                   // rule 2
+  const vis = visibleSet();                                 // rule 1
+  const opts = [];
+
+  for(const k in edgeCount){
+    const [a,b] = k.split("-").map(Number);
+    if(vis.has(a) || vis.has(b) || !R[a].nb.includes(b)) continue;
+    opts.push([edgeCount[k]*conf, "seal", [a,b]]);
+  }
+  const path = lookahead(3);
+  for(let i=0;i<path.length-1;i++){
+    const a = path[i], b = path[i+1];
+    if(vis.has(a) || vis.has(b) || !R[a].nb.includes(b)) continue;
+    const spare = R.map(r=>r.id).filter(c => !vis.has(c) && c!==a && !R[a].nb.includes(c));
+    if(spare.length){
+      const nb = spare.reduce((x,y)=> (roomCount[y]||0) < (roomCount[x]||0) ? y : x, spare[0]);
+      opts.push([1.6*(roomCount[b]||0)*conf, "rewire", [a,b,nb]]);
+    }
+  }
+  for(const id of notebook.keys()){
+    if(vis.has(id)) continue;
+    opts.push([0.8*(roomCount[id]||0)*conf, "poison", id]);
+  }
+  if(!opts.length) return;
+  opts.sort((x,y)=> y[0]-x[0]);
+  const [score, kind, arg] = opts[0];
+  if(score <= 0) return;
+
+  let ok = false;
+  if(kind === "seal")   ok = sealDoor(arg[0], arg[1]);
+  else if(kind === "rewire") ok = rewireDoor(arg[0], arg[1], arg[2]);
+  else if(kind === "poison"){
+    const room = R[arg]; const i = Math.floor(rnd()*4);
+    room.code = room.code.substring(0,i) + (room.code[i]==="0"?"1":"0") + room.code.substring(i+1);
+    ok = true;
+  }
+  if(!ok) return;
+  lastEdit = stats.moves; stats.acts[kind]++;
+  // The player is told nothing. Only the counters on this monitor show it happened.
 }
 
 // ---------- rendering ----------
@@ -428,6 +513,9 @@ function ui(){
     return '<tr><td>'+r.glyph+'</td><td>'+r.kw+'</td><td class="code '+(stale?"stale":"fresh")+'">'+code+'</td></tr>';
   }).join("") || '<tr><td colspan="3" class="hint">Nothing recorded yet.</td></tr>';
 
+  $("a-seal").textContent = stats.acts.seal;
+  $("a-rewire").textContent = stats.acts.rewire;
+  $("a-poison").textContent = stats.acts.poison;
   $("s-moves").textContent = stats.moves; $("s-caught").textContent = stats.caught;
   $("s-sent").textContent = stats.sent; $("s-bad").textContent = stats.bad;
 }

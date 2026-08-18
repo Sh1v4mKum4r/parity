@@ -33,45 +33,65 @@ def _bfs_path(fac, src: int, dst: int) -> list[int]:
 
 
 class HabitualBot:
-    """Walks a fixed objective circuit: tables -> terminals -> comms, repeat."""
+    """Cycles a fixed circuit of objective rooms: codebooks, then the uplink.
+
+    It follows the same stops in the same order every lap, so its trajectory is
+    highly regular -- which is precisely the habit a real player develops and the
+    signal the predictor feeds on. It navigates by shortest path rather than by a
+    memorised route, so when the Director seals or rewires a door the bot re-plans
+    around it. That re-planning cost is what E5 measures.
+    """
     name = "habitual"
 
-    def __init__(self, fac, seed: int = 0, noise: float = 0.08):
+    def __init__(self, fac, seed: int = 0, noise: float = 0.08, skew: bool = False):
         self.fac, self.rng, self.noise = fac, random.Random(seed), noise
         stops = [r for r in fac.rooms if fac.rooms[r].has_table]
         stops += [r for r in fac.rooms if fac.rooms[r].has_terminal]
         stops += [fac.comms_room]
+        stops = stops or [min(fac.rooms)]
+        if skew:
+            # Uneven reliance: a real player leans on some rooms far harder than
+            # others. With a uniform circuit every room is equally "relied on" and
+            # targeted sabotage has nothing to aim at.
+            favourite = stops[0]
+            stops = [favourite if i % 2 == 0 else stops[(i // 2) % len(stops)]
+                     for i in range(len(stops) * 2)]
         self.stops = stops
-        self.route = self._build_route()
-        self.i = 0
-
-    def _build_route(self) -> list[int]:
-        route, cur = [], self.stops[0]
-        for nxt in self.stops[1:] + [self.stops[0]]:
-            seg = _bfs_path(self.fac, cur, nxt)
-            route += seg[1:] if route else seg
-            cur = nxt
-        return route or [self.stops[0]]
+        self.stop_i = 0
+        self.pos = self.stops[0]
+        self.replans = 0
+        self.laps = 0
+        self._intended = None
 
     @property
-    def pos(self) -> int:
-        return self.route[self.i % len(self.route)]
+    def target(self) -> int:
+        return self.stops[self.stop_i % len(self.stops)]
 
     def step(self) -> int:
-        if self.rng.random() < self.noise:               # occasional deviation
+        # the door it was about to use is gone -> forced re-plan
+        if self._intended is not None and self._intended not in self.fac.neighbors(self.pos):
+            self.replans += 1
+
+        if self.pos == self.target:
+            self.stop_i += 1
+            if self.stop_i % len(self.stops) == 0:
+                self.laps += 1
+
+        if self.rng.random() < self.noise:
             nbs = self.fac.neighbors(self.pos)
-            if nbs:
-                return self.rng.choice(nbs)
-        self.i += 1
-        return self.route[self.i % len(self.route)]
+            nxt = self.rng.choice(nbs) if nbs else self.pos
+        else:
+            path = _bfs_path(self.fac, self.pos, self.target)
+            nxt = path[1] if len(path) > 1 else self.pos
+
+        self.pos = nxt
+        p2 = _bfs_path(self.fac, self.pos, self.target)
+        self._intended = p2[1] if len(p2) > 1 else None
+        return nxt
 
     def resync(self, actual: int) -> None:
-        """After a forced/deviated move, snap back onto the circuit."""
-        if self.route[self.i % len(self.route)] != actual:
-            for k, r in enumerate(self.route):
-                if r == actual:
-                    self.i = k
-                    return
+        self.pos = actual
+        self._intended = None
 
 
 class ExplorerBot:

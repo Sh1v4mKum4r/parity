@@ -17,7 +17,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from facility import Facility
 from bots import HabitualBot, ExplorerBot, RandomBot
 from predictors import UniformNeighbour, MarkovOrder1, VOMM
-from director import ModelDirector, RandomAmbush, DegreeCamp
+from director import ModelDirector, RandomAmbush, DegreeCamp, FullDirector
 
 BOTS = {"habitual": HabitualBot, "explorer": ExplorerBot, "random": RandomBot}
 STEPS, SEEDS, CTX = 1200, 12, 8
@@ -183,6 +183,98 @@ def e4_pursuit(bot_name="habitual"):
     return out
 
 
+
+def e5_disruption(bot_name="habitual", steps=1500):
+    """Do the world-editing counter-moves impose a real cost?
+
+    No entity here -- this isolates topology mutation from interception. The bot
+    cycles objective rooms; we measure how many moves an objective lap costs when
+    the Director is sealing and rewiring ahead of it versus when the facility is
+    left alone. Same seeds, same bot, only the Director differs.
+    """
+    out = {}
+    for label in ("no-director", "full-director"):
+        cost, acts = [], {"seal": 0, "rewire": 0, "poison": 0}
+        for seed in range(SEEDS):
+            fac = Facility(10, seed=seed)
+            bot = BOTS[bot_name](fac, seed=seed + 100)
+            tables = [r for r in fac.rooms if fac.rooms[r].has_table]
+            d = FullDirector(VOMM(), fac) if label == "full-director" else None
+            hist = [bot.pos]
+            for t in range(steps):
+                prev = hist[-1]
+                nxt = bot.step(); bot.resync(nxt)
+                if d is not None:
+                    d.model.observe(hist[-CTX:], nxt)
+                    d.observe_move(prev, nxt)
+                    d.maybe_edit(t, hist[-CTX:], nxt, recorded=tables)
+                hist.append(nxt)
+            if bot.laps:
+                cost.append(steps / bot.laps)
+            if d is not None:
+                for e in d.log:
+                    acts[e["action"]] = acts.get(e["action"], 0) + 1
+        out[label] = {"moves_per_lap": statistics.mean(cost),
+                      "sd": statistics.pstdev(cost),
+                      "actions": acts}
+    base = out["no-director"]["moves_per_lap"]
+    out["full-director"]["overhead_pct"] = 100.0 * (out["full-director"]["moves_per_lap"] / base - 1)
+    return out
+
+
+def e6_sabotage_precision(bot_name="habitual", steps=1500, cap=80, skew=False):
+    """Is sabotage AIMED, or is it noise?
+
+    A poisoned codebook only costs the player if they return to it, and it costs
+    them SOONER the better it was chosen. Binary hit-rate saturates on a small
+    facility (the bot eventually revisits everything), so we measure how many moves
+    elapse before the player walks back into the poisoned room. Lower is a
+    better-aimed sabotage. Control: poison a recorded room chosen at random.
+    """
+    out = {}
+    for label in ("random-target", "model-target"):
+        delays = []
+        for seed in range(SEEDS):
+            fac = Facility(10, seed=seed)
+            bot = BOTS[bot_name](fac, seed=seed + 100, skew=skew) if skew else BOTS[bot_name](fac, seed=seed + 100)
+            tables = [r for r in fac.rooms if fac.rooms[r].has_table]
+            d = FullDirector(VOMM(), fac)
+            rng = random.Random(seed + 77)
+            hist, shots = [bot.pos], []
+            for t in range(steps):
+                prev = hist[-1]
+                nxt = bot.step(); bot.resync(nxt)
+                d.model.observe(hist[-CTX:], nxt); d.observe_move(prev, nxt)
+                hist.append(nxt)
+                for sh in shots:
+                    if sh["delay"] is None:
+                        if nxt == sh["room"]:
+                            sh["delay"] = t - sh["t"]
+                        elif t - sh["t"] >= cap:
+                            sh["delay"] = cap
+                if t % 40 == 0 and t > 60:
+                    vis = d.visible(nxt)
+                    pool = [r for r in tables if r not in vis]
+                    if not pool:
+                        continue
+                    if label == "random-target":
+                        room = rng.choice(pool)
+                    else:
+                        # the room this player leans on most -- highest visit count,
+                        # broken by how soon the model expects them back
+                        room = max(pool, key=lambda r: d.room_counts.get(r, 0))
+                    shots.append({"t": t, "room": room, "delay": None})
+            done = [sh["delay"] for sh in shots if sh["delay"] is not None]
+            if done:
+                delays.append(statistics.mean(done))
+        out[label] = {"moves_until_revisit": statistics.mean(delays),
+                      "sd": statistics.pstdev(delays)}
+    a = out["random-target"]["moves_until_revisit"]
+    b = out["model-target"]["moves_until_revisit"]
+    out["model-target"]["faster_pct"] = 100.0 * (1 - b / a)
+    return out
+
+
 def main():
     res = {
         "config": {"rooms": 10, "steps": STEPS, "seeds": SEEDS, "context": CTX},
@@ -190,13 +282,19 @@ def main():
         "e2_learning": e2_learning_curve(),
         "e3_capture": e3_capture(),
         "e4_pursuit": e4_pursuit(),
+        "e5_disruption": e5_disruption(),
+        "e6_sabotage": e6_sabotage_precision(),
+        "e6_sabotage_skewed": e6_sabotage_precision(skew=True),
     }
     out = Path(__file__).parent.parent / "out"
     out.mkdir(exist_ok=True)
     (out / "metrics.json").write_text(json.dumps(res, indent=2))
     print(json.dumps(res["e1_accuracy"], indent=2))
     print("E3 idealised:", json.dumps(res["e3_capture"]))
-    print("E4 embodied  :", json.dumps(res["e4_pursuit"], indent=2))
+    print("E4 embodied  :", json.dumps(res["e4_pursuit"]))
+    print("E5 disruption:", json.dumps(res["e5_disruption"], indent=2))
+    print("E6 uniform reliance:", json.dumps(res["e6_sabotage"]))
+    print("E6 uneven reliance :", json.dumps(res["e6_sabotage_skewed"], indent=2))
     return res
 
 
