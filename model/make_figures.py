@@ -209,6 +209,32 @@ def fig_counterplay(out):
     fig.tight_layout(); fig.savefig(out, dpi=200); plt.close(fig)
 
 
+def fig_training(out):
+    import json
+    T = json.loads((ROOT / "out" / "training.json").read_text())
+    order = ["no model", "order-1 Markov", "VOMM", "VOMM tuned", "+ goal inference", "oracle ceiling"]
+    vals = [T[k] * 100 for k in order]
+    cols = ["#9aa3ab", "#9aa3ab", "#2a78d6", "#2a78d6", "#eb6834", "#16181a"]
+    fig, ax = plt.subplots(figsize=(8.4, 4.2))
+    ax.bar(range(len(order)), vals, width=0.52, color=cols, zorder=3)
+    for i, v in enumerate(vals):
+        ax.text(i, v + 1.4, f"{v:.1f}%", ha="center", fontsize=10.5, fontweight="bold", color=INK)
+    ceil = T["oracle ceiling"] * 100
+    ax.axhline(ceil, color="#16181a", lw=1, ls=":", zorder=2)
+    ax.text(-0.35, ceil + 3.2, "above this line is the player's own randomness — unpredictable by anything",
+            ha="left", fontsize=8.5, color=INK2)
+    ax.set_xticks(range(len(order)))
+    ax.set_xticklabels(["no model", "order-1\nMarkov", "VOMM", "VOMM\ntuned",
+                        "+ goal\ninference", "oracle\nceiling"], fontsize=9)
+    ax.set_ylabel("Top-1 accuracy, held-out facilities"); ax.set_ylim(0, 88)
+    ax.set_yticks([0, 25, 50, 75]); ax.set_yticklabels(["0%", "25%", "50%", "75%"])
+    ax.grid(axis="y", color=GRID, lw=0.8, zorder=0); ax.set_axisbelow(True)
+    _finish(ax, "The model is at 85% of the best any predictor could do",
+            "Habitual player on 12 facilities never used to choose anything. "
+            "Tuning and goal inference both failed to beat it")
+    fig.tight_layout(); fig.savefig(out, dpi=200); plt.close(fig)
+
+
 if __name__ == "__main__":
     out = ROOT / "out"; out.mkdir(exist_ok=True)
     fig_accuracy(out / "fig_accuracy.png")
@@ -219,4 +245,5 @@ if __name__ == "__main__":
     fig_dwell(out / "fig_dwell.png")
     fig_localisation(out / "fig_localisation.png")
     fig_counterplay(out / "fig_counterplay.png")
+    fig_training(out / "fig_training.png")
     print("figures written:", *[p.name for p in sorted(out.glob("*.png"))])

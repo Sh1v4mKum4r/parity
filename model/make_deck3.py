@@ -309,6 +309,17 @@ tb(s, 0.72, 5.5, 11.9, 1.0,
    "does not. Two of this cycle's findings came from noticing that a strategy looked good only because it "
    "was measured per window rather than per objective.", size=13, color=MUT, line=1.3)
 
+# ---------------------------------------------------------------- training
+s = slide(); header(s, "Technical accuracy", "How well is the model actually trained?")
+picture(s, "fig_training.png", 2.4, 1.8, 8.6)
+tb(s, 0.72, 6.28, 11.9, 1.05,
+   "A predictor is only as good as the ceiling allows. An oracle that can see the player's own internal "
+   "state \u2014 which objective they are walking to, whether they are mid-page \u2014 reaches 70.9%; the rest is "
+   "their own coin-flips. Our model reaches 59.9% from behaviour alone, which is 85% of the achievable "
+   "signal. Grid-searching the hyperparameters changed nothing, and inferring intent explicitly made it "
+   "worse.", size=12, color=MUT, line=1.28)
+
+
 # ---------------------------------------------------------------- 10-15 results
 s = slide(); header(s, "Results", "Next-move prediction")
 picture(s, "fig_accuracy.png", 2.27, 1.85, 8.8)
@@ -471,23 +482,27 @@ NOTES = {
     "tracking. Partial observation only exists because coverage is incomplete.",
  12: "The rigour slide. The control is the strongest thing in the project. Also mention that two findings "
     "this cycle came from catching a bad metric.",
- 13: "Lead with the control column, not the 61%.",
- 14: "Lead with the 100% bar — it never linger where there is nothing to record. The 67% bar is the honest "
+ 13: "The answer to 'is it trained properly'. Measure the ceiling, then show where you sit against it. "
+     "Say the three things that did NOT work: hyperparameter search, intent tagging, goal inference. All "
+     "three were redundant because the variable-order context already encodes them. That is a finding "
+     "about the architecture, not a failure.",
+ 15: "Lead with the control column, not the 61%.",
+ 15: "Lead with the 100% bar — it never linger where there is nothing to record. The 67% bar is the honest "
      "one: it knows you may be writing, not when you will finish.",
- 15: "The answer to 'hub-camping is nearly as good'. Only on a small map.",
- 16: "Note the entity is removed here, isolating world editing from hunting.",
- 17: "First new result. The counter-intuitive bit is that full coverage gives perfect tracking, because "
+ 16: "The answer to 'hub-camping is nearly as good'. Only on a small map.",
+ 17: "Note the entity is removed here, isolating world editing from hunting.",
+ 18: "First new result. The counter-intuitive bit is that full coverage gives perfect tracking, because "
      "silence is informative. That is why the fiction needs unwired doors and disabled sensors.",
- 18: "The headline. Three things: waiting is worse than useless, avoidance barely helps, and disabling "
+ 19: "The headline. Three things: waiting is worse than useless, avoidance barely helps, and disabling "
      "sensors on your own route is the real counter-play. Point out this is your design mechanic validated "
      "by measurement, not chosen after the fact.",
- 19: "Do not read this. It is here so the panel can see the shape of the work and pick something to ask "
+ 20: "Do not read this. It is here so the panel can see the shape of the work and pick something to ask "
      "about. Note the two rows marked NEGATIVE — volunteer them.",
- 20: "If you only defend one slide, defend this one. It shows evidence driving decisions, a corrected metric "
+ 21: "If you only defend one slide, defend this one. It shows evidence driving decisions, a corrected metric "
      "overturning two apparent wins, and the design being validated rather than rationalised.",
- 21: "Say these before they are asked. The 3D build not being started is the obvious one — own it and point "
+ 22: "Say these before they are asked. The 3D build not being started is the obvious one — own it and point "
      "at the roadmap and at why M6 came first.",
- 22: "Run item 1 and item 3 if there is time. Item 3 takes seconds and answers any rigour question.",
+ 23: "Run item 1 and item 3 if there is time. Item 3 takes seconds and answers any rigour question.",
 }
 for idx, sl in enumerate(prs.slides, start=1):
     if idx in NOTES:
