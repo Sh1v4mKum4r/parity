@@ -416,16 +416,20 @@ function predictFrom(room){
 }
 
 let windowStartCell = 0, searchSeen = {};
-function onEnterCell(from, to){
-  if(ROLE[to]==="codebook" && !visited.has(to)){
-    visited.add(to);
-    msg = "Codebook " + GLYPH[to] + " recorded. " + visited.size + " of 3.";
+function checkRoom(){
+  // Being in the room is what records it. Doing this on doorway-crossing only
+  // meant a respawn could drop you inside a codebook room that never registered.
+  const c = curCell;
+  if(ROLE[c]==="codebook" && !visited.has(c)){
+    visited.add(c);
+    msg = "Codebook " + GLYPH[c] + " recorded. " + visited.size + " of 3.";
   }
-  if(ROLE[to]==="uplink" && visited.size>=3){
+  if(ROLE[c]==="uplink" && visited.size>=3 && !objective){
     msg = "SIGNAL AWAY. You got it out.";
     objective = 1;
   }
 }
+function onEnterCell(from, to){ /* kept for the movement call site */ }
 
 function bfsStep(from, to){
   if(from===to) return from;
@@ -464,7 +468,20 @@ function resolveWindow(){
   }
   searchSeen[entityCell] = performance.now();
   entityCell = bfsStep(entityCell, tgt);
-  if(entityCell === curCell){ caught++; msg = "IT FOUND YOU."; }
+  if(entityCell === curCell){
+    caught++;
+    msg = "IT FOUND YOU. Again, then.";
+    // it takes you, and the facility puts you back somewhere else. Your pages
+    // survive; so does its model of you.
+    const far = CELLS.map((_,i)=>i)
+      .filter(i => i !== entityCell)
+      .sort((a,b) => Math.hypot(CC[b].x-CC[entityCell].x, CC[b].z-CC[entityCell].z)
+                   - Math.hypot(CC[a].x-CC[entityCell].x, CC[a].z-CC[entityCell].z));
+    curCell = far[0];
+    cam.x = CC[curCell].x + 2.0; cam.z = CC[curCell].z + 1.6;
+    belief = CELLS.map(()=>1/CELLS.length);
+    aiSay("I had you. The facility moved you. I will find you again.");
+  }
 }
 
 // ---------------------------------------------------------------- camera
@@ -524,8 +541,8 @@ function insideFacility(x, z){
 }
 
 let last = performance.now(), t = 0;
-function frame(now){
-  const dt = Math.min((now-last)/1000, 0.05); last = now; t += dt;
+function simulate(dt){
+  t += dt;
 
   const turn = 1.9 * dt;
   if(keys.ArrowLeft)  cam.yaw += turn;
@@ -547,25 +564,34 @@ function frame(now){
   const bobY = moving ? Math.sin(cam.bob)*0.035 : 0;
 
   // the facility breathes: sealed, then a short window when every door unlocks
-  if(!objective && !caught){
+  if(!objective){
     timer -= dt;
     if(timer <= 0){
       if(phase === "open"){ resolveWindow(); phase="lock"; timer=LOCKDOWN; doorsOpen=false; }
       else { phase="open"; timer=WINDOW; doorsOpen=true; windowStartCell=curCell; }
     }
   }
+  checkRoom();
   const tot = phase==="open" ? WINDOW : LOCKDOWN;
   const ph = document.getElementById("phase3");
-  ph.textContent = caught ? "TAKEN" : objective ? "SIGNAL AWAY" : (phase==="open" ? "DOORS OPEN" : "LOCKDOWN");
-  ph.style.color = caught ? "#ff4d3d" : phase==="open" ? "#5fd39a" : "#8a7f6a";
+  ph.textContent = objective ? "SIGNAL AWAY" : (phase==="open" ? "DOORS OPEN" : "LOCKDOWN");
+  ph.style.color = phase==="open" ? "#5fd39a" : "#8a7f6a";
   const b3 = document.getElementById("bar3");
   b3.style.width = Math.max(0, timer/tot*100) + "%";
   b3.style.background = phase==="open" ? "#5fd39a" : "#ffb545";
   document.getElementById("obj3").textContent =
-    msg || ("codebooks " + visited.size + "/3" + (visited.size>=3 ? " — get to the uplink" : ""));
+    (msg ? msg + "   ·   " : "") + "codebooks " + visited.size + "/3" +
+    (visited.size>=3 ? " — get to the uplink" : "") + (caught ? "   ·   taken " + caught + "x" : "");
   document.getElementById("conf3").textContent = Math.round(beliefConf()*100) + "%";
   document.getElementById("map3").textContent =
     GLYPH[beliefMap()] + (beliefMap()===curCell ? " (right)" : " (wrong)");
+
+  return bobY;
+}
+
+function frame(now){
+  const dt = Math.min((now-last)/1000, 0.05); last = now;
+  const bobY = simulate(dt);
 
   const eye = [cam.x, cam.y + bobY, cam.z];
   const dir = [ -Math.sin(cam.yaw)*Math.cos(cam.pitch), Math.sin(cam.pitch), -Math.cos(cam.yaw)*Math.cos(cam.pitch) ];
@@ -610,6 +636,79 @@ function frame(now){
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
+
+// ?autoplay=N runs N frames of REAL play: the same key handling, the same
+// collision, the same clock. Results land in #testout for a headless read.
+const _auto = parseInt(new URLSearchParams(location.search).get("autoplay") || "0", 10);
+if(_auto > 0){
+  startEl.style.display = "none";
+  const T = { frames:0, crossAttempts:0, crossed:0, stuckFrames:0, windows:0,
+              cellsSeen:new Set([curCell]), books:0, caught:0, missedWindows:0 };
+  let lastCell = curCell, lastPhase = phase, stuck = 0, prevX = cam.x, prevZ = cam.z;
+  let windowHadAttempt = false;
+
+  function pathNext(from, to){
+    if(from===to) return from;
+    const prev=new Map([[from,null]]), q=[from];
+    while(q.length){ const c=q.shift();
+      if(c===to){ let cur=to; while(prev.get(cur)!==null && prev.get(prev.get(cur))!==null) cur=prev.get(cur); return cur; }
+      neighboursOf(c).forEach(nb=>{ if(!prev.has(nb)){ prev.set(nb,c); q.push(nb); } });
+    }
+    return from;
+  }
+  function goal(){
+    const books = CELLS.map((_,i)=>i).filter(i=>ROLE[i]==="codebook" && !visited.has(i));
+    if(visited.size < 3 && books.length) return books[0];
+    return 0;                                   // the uplink
+  }
+
+  for(let f=0; f<_auto && !objective; f++){
+    const g = goal(), nxt = pathNext(curCell, g);
+    const dw = nxt!==curCell ? doorBetween(curCell, nxt) : null;
+    const aim = dw ? {x:dw.x, z:dw.z} : {x:CC[curCell].x, z:CC[curCell].z};
+    // face the doorway, exactly as a player would
+    const want = Math.atan2(-(aim.x-cam.x), -(aim.z-cam.z));
+    let d = want - cam.yaw;
+    while(d >  Math.PI) d -= 2*Math.PI;
+    while(d < -Math.PI) d += 2*Math.PI;
+    cam.yaw += Math.max(-0.09, Math.min(0.09, d));
+    const facing = Math.abs(d) < 0.5;
+    keys.KeyW = !!(dw && doorsOpen && facing);
+    keys.ShiftLeft = keys.KeyW;
+
+    if(dw && doorsOpen && !windowHadAttempt){ T.crossAttempts++; windowHadAttempt = true; }
+    simulate(1/30);
+    T.frames++;
+
+    if(keys.KeyW){
+      const moved = Math.hypot(cam.x-prevX, cam.z-prevZ);
+      if(moved < 0.004) { stuck++; T.stuckFrames++; } else stuck = 0;
+      if(stuck > 45){                              // shoved against geometry: back off
+        cam.x -= (aim.x-cam.x)*0.05; cam.z -= (aim.z-cam.z)*0.05; stuck = 0;
+      }
+    }
+    prevX = cam.x; prevZ = cam.z;
+
+    if(curCell !== lastCell){ T.crossed++; T.cellsSeen.add(curCell); lastCell = curCell; }
+    if(phase !== lastPhase){
+      if(lastPhase === "open"){
+        T.windows++;
+        windowHadAttempt = false;
+      }
+      lastPhase = phase;
+    }
+    if(caught > T.caught){ T.caught = caught; }
+  }
+  T.books = visited.size;
+  const el = document.createElement("pre");
+  el.id = "testout";
+  el.textContent = JSON.stringify({
+    frames:T.frames, windows:T.windows, doorAttempts:T.crossAttempts, doorsCrossed:T.crossed,
+    stuckFrames:T.stuckFrames, cellsReached:T.cellsSeen.size,
+    codebooks:T.books, caught:T.caught, escaped:objective ? 1 : 0
+  });
+  document.body.appendChild(el);
+}
 
 // ?sim=N advances N windows with the player wandering, for stills and demos
 const _simN = parseInt(new URLSearchParams(location.search).get("sim") || "0", 10);
