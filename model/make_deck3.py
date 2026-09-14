@@ -14,6 +14,23 @@ E4 = M["e4_pursuit"]; E5 = M["e5_disruption"]
 E6U, E6S = M["e6_sabotage"], M["e6_sabotage_skewed"]
 E7 = M["e7_scaling"]; E8 = M["e8_waiting"]
 E9 = M["e9_dwell"]; E10 = M["e10_dwell_learned"]
+import json as _j
+TR = _j.loads((ROOT / "out" / "training.json").read_text())
+
+# counts computed from the tree, so the deck cannot drift from the repo
+import subprocess as _sp
+_CORE = ["facility.py", "sensors.py", "predictors.py", "director.py", "bots.py",
+         "evaluate.py", "test_invariants.py", "tune.py"]
+PY_LINES = sum(len((ROOT / "model" / f).read_text().splitlines()) for f in _CORE)
+PY_MODS = len(_CORE)
+_JS = sorted((ROOT / "demo").glob("*.html"))
+JS_LINES = sum(len(f.read_text().splitlines()) for f in _JS)
+JS_APPS = len(_JS)
+N_EXP = sum(1 for l in (ROOT / "model" / "evaluate.py").read_text().splitlines()
+            if l.startswith("def e") and "(" in l)
+N_INV = (ROOT / "model" / "test_invariants.py").read_text().count("@check")
+N_COMMITS = int(_sp.run(["git", "-C", str(ROOT), "rev-list", "--count", "HEAD"],
+                        capture_output=True, text=True).stdout.strip() or 0)
 R_CTL = E4["vomm-intercept"]["per_1000"] / E4["random-walk"]["per_1000"]
 R_HUB = E4["vomm-intercept"]["per_1000"] / E4["hub-camp"]["per_1000"]
 SIZES = sorted(int(k) for k in E7)
@@ -107,6 +124,23 @@ E1, E4, E5 = M["e1_accuracy"], M["e4_pursuit"], M["e5_disruption"]
 E7, E10 = M["e7_scaling"], M["e10_dwell_learned"]
 E11, E12 = M["e11_localisation"], M["e12_counterplay"]
 E10 = M["e10_dwell_learned"]
+import json as _j
+TR = _j.loads((ROOT / "out" / "training.json").read_text())
+
+# counts computed from the tree, so the deck cannot drift from the repo
+import subprocess as _sp
+_CORE = ["facility.py", "sensors.py", "predictors.py", "director.py", "bots.py",
+         "evaluate.py", "test_invariants.py", "tune.py"]
+PY_LINES = sum(len((ROOT / "model" / f).read_text().splitlines()) for f in _CORE)
+PY_MODS = len(_CORE)
+_JS = sorted((ROOT / "demo").glob("*.html"))
+JS_LINES = sum(len(f.read_text().splitlines()) for f in _JS)
+JS_APPS = len(_JS)
+N_EXP = sum(1 for l in (ROOT / "model" / "evaluate.py").read_text().splitlines()
+            if l.startswith("def e") and "(" in l)
+N_INV = (ROOT / "model" / "test_invariants.py").read_text().count("@check")
+N_COMMITS = int(_sp.run(["git", "-C", str(ROOT), "rev-list", "--count", "HEAD"],
+                        capture_output=True, text=True).stdout.strip() or 0)
 SIZES = sorted(int(k) for k in E7)
 COVS = sorted(E12, key=float, reverse=True)
 pc = lambda k: f"{E1[k]['top1']*100:.1f}%"
@@ -218,11 +252,11 @@ tb(s, 0.72, 6.92, 11.9, 0.5,
 s = slide(); header(s, "Implementation", "Executable, and attributable")
 table(s, [
     ["Artefact", "Scale", "How the panel can verify it"],
-    ["Simulation core and model", "1,850 lines of Python, 10 modules", "python3 model/evaluate.py"],
-    ["Invariant test suite", "9 properties over 25 generated facilities", "python3 model/test_invariants.py"],
-    ["Experiment suite", "12 experiments, all seeded and reproducible", "writes out/metrics.json"],
-    ["Browser prototypes", "1,818 lines of JavaScript, 4 apps", "open the .html — no install"],
-    ["Version history", "12 commits, single author", "git log"],
+    ["Simulation core and model", f"{PY_LINES:,} lines of Python across {PY_MODS} modules", "python3 model/evaluate.py"],
+    ["Invariant test suite", f"{N_INV} properties over 25 generated facilities", "python3 model/test_invariants.py"],
+    ["Experiment suite", f"{N_EXP} experiments, all seeded and reproducible", "writes out/metrics.json"],
+    ["Browser builds", f"{JS_LINES:,} lines of JavaScript across {JS_APPS} builds", "open the .html — no install"],
+    ["Version history", f"{N_COMMITS} commits, single author", "git log"],
 ], col_w=[3.2, 4.3, 4.4], size=12, head_size=9)
 tb(s, 0.72, 4.5, 11.9, 0.35, "THE FOUR PROTOTYPES", size=10.5, bold=True, color=ACC)
 bullets(s, [
@@ -313,12 +347,12 @@ tb(s, 0.72, 5.5, 11.9, 1.0,
 # ---------------------------------------------------------------- training
 s = slide(); header(s, "Technical accuracy", "How well is the model actually trained?")
 picture(s, "fig_training.png", 2.4, 1.8, 8.6)
-tb(s, 0.72, 6.28, 11.9, 1.05,
-   "A predictor is only as good as the ceiling allows. An oracle that can see the player's own internal "
-   "state \u2014 which objective they are walking to, whether they are mid-page \u2014 reaches 70.9%; the rest is "
-   "their own coin-flips. Our model reaches 59.9% from behaviour alone, which is 85% of the achievable "
-   "signal. Grid-searching the hyperparameters changed nothing, and inferring intent explicitly made it "
-   "worse.", size=12, color=MUT, line=1.28)
+tb(s, 0.72, 6.30, 11.9, 0.95,
+   f"An oracle that can see the player's own internal state reaches {TR['oracle ceiling']*100:.1f}%; the rest is their own "
+   f"coin-flips. The model reaches {TR['VOMM (settled)']*100:.1f}% from behaviour alone \u2014 "
+   f"{TR['VOMM (settled)']/TR['oracle ceiling']*100:.0f}% of the achievable signal, and 100% against a perfectly "
+   "consistent player. Grid search, intent tagging and goal inference all failed to improve it.",
+   size=11.5, color=MUT, line=1.26)
 
 
 # ---------------------------------------------------------------- 10-15 results
@@ -372,7 +406,7 @@ tb(s, 0.72, 6.3, 11.9, 1.0,
    "still reports you. The counter-play has a sweet spot.", size=11.5, color=MUT, line=1.28)
 
 # ---------------------------------------------------------------- 16 summary
-s = slide(); header(s, "Results", "All twelve experiments at a glance")
+s = slide(); header(s, "Results", f"All {N_EXP} experiments at a glance")
 table(s, [
     ["#", "Question", "Headline", "Reading"],
     ["E1", "Can it predict the next move?", f"{pc('habitual|vomm')} vs {pc('habitual|markov-1')} vs {pc('habitual|uniform')}", "Learns routes"],
@@ -456,61 +490,103 @@ table(s, [
 tb(s, 0.72, 5.0, 11.9, 0.5, "Full 22-work review in the Review I deck and the project report.",
    size=12.5, color=MUT)
 
-NOTES = {
- 1: "BCSE497J Review III. Keep this short and move to evidence.",
- 2: "Thirty seconds of context, then say the sentence that matters: everything in this deck is executable "
-    "and the panel can run it. Name the new work: partial observation, built because the last review's "
-    "negative result pointed at it.",
- 3: "Lead with this. Walk two rooms, let a window open and close, and let them read the panel top-right "
-    "while you move. It answers 'where is the game' and 'show the AI functioning' in one go.",
- 5: "Open the build and leave it running while you talk. Point at the ring on the map and say it out loud: "
-    "it is confidently wrong, because the player has been using doors it cannot hear. That single image "
-    "answers 'show us the AI functioning'.",
- 5: "Read two of these lines aloud verbatim. This is the answer to 'explain the AI in plain view' — it is "
-    "not a diagram of the AI, it is the AI talking. Then say the last line is what the player NEVER sees: "
-    "the tampering is silent in normal play, and the AI view is how you inspect it.",
- 6: "THE implementation slide. Walk the Status column, not the whole table. Eight of ten modules complete "
-    "and measured, two running as prototypes, and be straight that the 3D integration has not started. "
-    "Say 'roughly 80% of the approved module list' — do not overclaim a finished game.",
- 7: "Offer to run something. 'python3 model/test_invariants.py takes about five seconds' is a strong line. "
-    "Attribution is the git history: 12 commits, single author.",
- 8: "Two decisions to defend: Sabotage is the only mutator so every change is logged and replayable; the "
-    "Notebook sits outside the loop, which is what makes it the player's counter-move.",
- 9: "This is the progress slide. Lead with the negative result from last time, then what you built because "
-    "of it. Panels reward work that follows from evidence rather than from a plan.",
- 10: "Explain the order-1 failure concretely: a route means the same room has different successors depending "
-    "on how you entered it. Then say staying is a legal action, which is why accuracy is 61% and not 90% — "
-    "an earlier version forbade waiting and that number was inflated.",
- 11: "The new method. Predict, then rule out whatever the evidence contradicts. The detail that impresses: "
-    "if every door is wired, SILENCE is evidence — it proves they stayed — so full coverage is still perfect "
-    "tracking. Partial observation only exists because coverage is incomplete.",
- 12: "The rigour slide. The control is the strongest thing in the project. Also mention that two findings "
-    "this cycle came from catching a bad metric.",
- 13: "The answer to 'is it trained properly'. Measure the ceiling, then show where you sit against it. "
-     "Say the three things that did NOT work: hyperparameter search, intent tagging, goal inference. All "
-     "three were redundant because the variable-order context already encodes them. That is a finding "
-     "about the architecture, not a failure.",
- 15: "Lead with the control column, not the 61%.",
- 15: "Lead with the 100% bar — it never linger where there is nothing to record. The 67% bar is the honest "
-     "one: it knows you may be writing, not when you will finish.",
- 16: "The answer to 'hub-camping is nearly as good'. Only on a small map.",
- 17: "Note the entity is removed here, isolating world editing from hunting.",
- 18: "First new result. The counter-intuitive bit is that full coverage gives perfect tracking, because "
-     "silence is informative. That is why the fiction needs unwired doors and disabled sensors.",
- 19: "The headline. Three things: waiting is worse than useless, avoidance barely helps, and disabling "
-     "sensors on your own route is the real counter-play. Point out this is your design mechanic validated "
-     "by measurement, not chosen after the fact.",
- 20: "Do not read this. It is here so the panel can see the shape of the work and pick something to ask "
-     "about. Note the two rows marked NEGATIVE — volunteer them.",
- 21: "If you only defend one slide, defend this one. It shows evidence driving decisions, a corrected metric "
-     "overturning two apparent wins, and the design being validated rather than rationalised.",
- 22: "Say these before they are asked. The 3D build not being started is the obvious one — own it and point "
-     "at the roadmap and at why M6 came first.",
- 23: "Run item 1 and item 3 if there is time. Item 3 takes seconds and answers any rigour question.",
-}
-for idx, sl in enumerate(prs.slides, start=1):
-    if idx in NOTES:
-        sl.notes_slide.notes_text_frame.text = NOTES[idx]
+# Notes are bound to slide CONTENT, not slide number. Renumbering the deck used
+# to silently move a note onto the wrong slide.
+NOTES_BY_TITLE = [
+ ("PARITY", "BCSE497J Review III. Keep this short and move to the evidence."),
+ ("Where this stands",
+  "Thirty seconds of context, then the sentence that matters: everything here is executable and the "
+  "panel can run it. Walk the feedback table \u2014 it is their own words with what changed beside each one."),
+ ("The game",
+  "Lead with this. Walk two rooms, let a window open and close, and let them read the panel top-right "
+  "while you move. It answers 'where is the game' and 'show the AI functioning' in one go."),
+ ("The same AI, in plain view",
+  "This is the systems view of the SAME antagonist. Belief drawn as heat on the rooms, solid vs dashed "
+  "doors for what it can and cannot hear, and a sensor you can cut. Use it when someone asks how the "
+  "thing in the 3D build actually works."),
+ ("The AI in plain view",
+  "Read two of these lines aloud verbatim. This is not a diagram of the AI, it is the AI talking. The "
+  "last line is what the player NEVER sees: tampering is silent in normal play, and the AI view is how "
+  "you inspect it."),
+ ("How much of the game is built",
+  "THE implementation slide. Walk the Status column, not the whole table. Be straight that the Godot "
+  "port has not started \u2014 the first-person build is hand-written WebGL."),
+ ("Executable, and attributable",
+  "Offer to run something. 'python3 model/test_invariants.py takes about five seconds' is a strong "
+  "line. Attribution is the git history: 19 commits, single author."),
+ ("Eight modules across three layers",
+  "Two decisions to defend: Sabotage is the only thing that mutates the world, so every change is "
+  "logged and replayable; the Notebook sits outside the loop, which is what makes it the player's "
+  "counter-move rather than decoration."),
+ ("Partial observation",
+  "The progress slide. Lead with the negative result from last cycle, then what you built because of "
+  "it. Panels reward work that follows from evidence rather than from a plan."),
+ ("The predictor",
+  "Explain the order-1 failure concretely: a route means the same room has different successors "
+  "depending on how you entered it. Then say staying is a legal action, which is why the action space "
+  "is N(v) plus v."),
+ ("The belief filter",
+  "The new method. Predict, then rule out whatever the evidence contradicts. The detail that lands: if "
+  "EVERY door is wired then silence is evidence \u2014 it proves they stayed \u2014 so full coverage is still "
+  "perfect tracking. Partial observation only exists because coverage is incomplete."),
+ ("Evaluation protocol",
+  "The rigour slide. The control is the strongest thing in the project. Also mention that two findings "
+  "this cycle came from catching a bad metric."),
+ ("How well is the model actually trained",
+  "The answer to 'is it trained properly'. Measure the ceiling first, then show where you sit against "
+  "it: 89% against a 91.8% ceiling, and 100% against a perfectly consistent player. Say the three "
+  "things that did NOT work \u2014 grid search, intent tagging, goal inference \u2014 all redundant because the "
+  "variable-order context already encodes them."),
+ ("Next-move prediction",
+  "Lead with the CONTROL group on the right, not the 84%. Against a random player the model scores the "
+  "same as no model, which is what proves there is no leakage."),
+ ("Knowing when you stop to write",
+  "Volunteer this as the open problem. Once the player writes realistically, dwell is rare, so accuracy "
+  "becomes meaningless \u2014 'always move' scores 96% and learns nothing. On recall the model catches about "
+  "one stop in six. Four attempts to improve it all made it worse."),
+ ("advantage grows with the facility",
+  "The answer to 'hub-camping is nearly as good'. Only on a small map."),
+ ("World editing",
+  "Note the entity is removed here, which isolates world editing from hunting."),
+ ("What the sensors actually buy",
+  "First new result. The counter-intuitive bit is that FULL coverage gives perfect tracking, because "
+  "silence is informative. That is exactly why the fiction needs unwired doors and cuttable sensors."),
+ ("What the player can actually do",
+  "The headline. Waiting is catastrophic. Routing around sensors barely registers. Killing sensors on "
+  "your own route works at 60% coverage but BACKFIRES at full coverage \u2014 nine windows stood still in "
+  "the open buys too little when every other door still reports you. The counter-play has a sweet spot."),
+ ("at a glance",
+  "Do not read this. It is here so the panel can see the shape of the work and pick something to ask "
+  "about. Two rows are marked NEGATIVE and one OPEN \u2014 volunteer those."),
+ ("findings changed the design",
+  "If you only defend one slide, defend this one. Evidence driving decisions, a corrected metric "
+  "overturning apparent wins, and the player model turning out to be the bottleneck rather than the AI."),
+ ("Stated before the panel finds them",
+  "Say these before they are asked. The Godot port not being started is the obvious one \u2014 own it, and "
+  "point at why partial observation came first."),
+ ("Four things that run right now",
+  "Run item 1, and item 3 if there is time. Item 3 takes seconds and answers any rigour question."),
+]
+
+_titles = []
+for sl in prs.slides:
+    t = ""
+    for sh in sl.shapes:
+        if sh.has_text_frame and sh.text_frame.text.strip():
+            t += " " + sh.text_frame.text
+    _titles.append(t.lower())
+
+_used = set()
+for needle, note in NOTES_BY_TITLE:
+    for i, t in enumerate(_titles):
+        if i in _used:
+            continue
+        if needle.lower() in t:
+            list(prs.slides)[i].notes_slide.notes_text_frame.text = note
+            _used.add(i)
+            break
+    else:
+        print("  WARNING: no slide matched note for", repr(needle))
 
 out = ROOT / "docs" / "PARITY-review3-deck.pptx"
 prs.save(out)
