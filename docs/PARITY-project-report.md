@@ -1,8 +1,8 @@
 # PARITY
 ## An Adaptive Horror Game Driven by Online Player-Trajectory Prediction
 
-**Project Review — Progress Report**
-Shivam Kumar · Vellore Institute of Technology · 18 August 2026
+**Project Review III — Progress Report**
+Shivam Kumar · Vellore Institute of Technology · 16 September 2026
 
 ---
 
@@ -230,6 +230,34 @@ exclusively on recorded information — not as a concession, but because poisoni
 unrecorded codebook disrupts nothing, so a utility-maximising Director never spends
 a move on it. The fairness is emergent, not announced.
 
+### 3.6 Partial observation: sensing through door events
+
+The antagonist originally observed the player's position perfectly. That turned out
+to be the reason waiting was not a defence (§5.7), so this cycle replaced it.
+
+Doors carry motion detectors, and a fraction of them are live — some the facility
+never wired, some the player has spent a dangerous task to silence. The antagonist
+observes one thing per window: which door, if any, tripped. It maintains a belief
+over rooms and updates it with a forward filter:
+
+```
+predict   b'(c) = sum_r b(r) * T(r -> c)
+update    zero any state inconsistent with the evidence, renormalise
+```
+
+| Evidence | What it rules out | Effect |
+|---|---|---|
+| Door (a,b) tripped | Everything except a crossing of that door | Collapses to near-certainty |
+| Silence | Any crossing of a **wired** door | Keeps staying put and unwired crossings |
+| Co-location | Everything else | Collapses to certainty |
+
+Silence is the interesting case: it is ambiguous between "they held position" and
+"they used a door I cannot hear", and that ambiguity is what gives the player
+something to exploit. One consequence is worth stating plainly, because it is
+counter-intuitive: **if every door is wired, silence proves the player stayed**, so
+full coverage is still perfect tracking. Partial observation only exists because
+coverage is incomplete.
+
 ### 3.5 Evaluation protocol
 
 Human playtesting does not scale to a solo project, so evaluation is **headless and
@@ -313,278 +341,243 @@ codebook or rotates a room, the notebook does not become corrupted — it become
 
 ### 4.4 Implementation status
 
-| Component | State |
-|---|---|
-| Facility graph + mutation + connectivity invariant | Implemented, Python |
-| VOMM predictor, baselines, controls | Implemented, Python |
-| Director — all four counter-moves (intercept, seal, rewire, poison) | Implemented, Python |
-| Invariant test suite (9 properties) | Implemented, passing |
-| Bot harness (habitual / explorer / random) | Implemented, Python |
-| Evaluation suite + figures | Implemented, Python |
-| Interactive browser demo (graph, live belief, entity, codebooks, sabotage) | Implemented, JS |
-| Notebook staleness / codebook poisoning in the simulation core | Modelled abstractly; full cipher loop is M4 |
-| Godot first-person vertical slice | Next milestone |
-| **Polygonal room tiles (side count = difficulty setting)** | **Designed, not built** |
-| **Tile rotation as a counter-move ("changing room orientation")** | **Designed, not built** |
-| **Door motion-sensors and partial observation** | **Designed, not built** |
-| **Outbound bit register with pre-send tampering** | **Designed, not built** |
-| **Dangerous tasks that buy sensor blackouts** | **Designed, not built** |
-| Notebook vector editor | Designed, not built |
+| System | Status | Where it runs |
+|---|---|---|
+| Facility — room graph, mutation, connectivity invariants | Complete | `facility.py`, 4 tests |
+| Predictor — variable-order Markov, online, persists | Complete | `predictors.py` |
+| Director — counter-move selection, confidence-gated | Complete | `director.py` |
+| Sabotage — sole mutator of world state, logged | Complete | `director.py` |
+| Telemetry — routes, dwell, edge traversals | Complete | `director.py` |
+| Entity — perception, pursuit, interception | Complete | `director.py` |
+| **Sensors and belief filter — partial observation** | **Complete (new)** | `sensors.py` |
+| Notebook — freehand editor, strokes, undo, pages | In the game | `parity-game.html` |
+| Cipher — codebooks, register, transmit validation | In the game | `parity-game.html` |
+| Door clock — lockdown / window cycle | In the game | `parity-game.html` |
+| **First-person build — walkable facility with the AI in it** | **Playable (new)** | `parity-3d.html` |
+| Godot port — engine build, lighting, animation | Not started | — |
+| Audio, content, progression | Not started | — |
 
----
+The complete core loop is playable in first person: move on a shared door clock,
+read codebooks, write pages, stage and send a byte, and evade an antagonist that
+models you. What remains is the engine port, audio and content — presentation
+rather than mechanism.
 
 ## 5. Results
 
-Facility: 10 rooms. 1200 steps × 12 seeds per condition. Prequential evaluation.
+Ten rooms, 1200–1500 windows × 12 seeds, all seeded and reproducible. Evaluation is
+prequential: every prediction is made before its outcome is observed, so there is no
+train/test leakage by construction. Training-quality figures (§5.2) use 12 facilities
+that were never used to choose anything.
 
-### 5.1 Next-room prediction accuracy (top-1)
+### 5.1 Next-move prediction
 
-| Player | Uniform (no model) | Order-1 Markov | **VOMM (proposed)** |
+At each window the player takes a door **or declines to move**, so the candidate set
+is `N(v) ∪ {v}`. Dwell is predicted, not assumed.
+
+![Top-1 accuracy by player type and model](../out/fig_accuracy.png)
+
+| Player | No model | Order-1 Markov | **VOMM** |
 |---|---|---|---|
-| Habitual | 30.6% | 46.2% | **61.1%** |
+| Habitual | 39.1% | 60.0% | **83.6%** |
 | Explorer | 31.2% | 53.0% | **69.6%** |
-| Evasive *(waits to break pattern)* | 26.4% | 45.6% | **55.7%** |
+| Evasive *(waits to break pattern)* | 25.4% | 44.3% | **53.4%** |
 | Random *(control)* | 26.9% | 25.9% | **26.7%** |
 
-![Top-1 next-room accuracy by player type and model](../out/fig_accuracy.png)
+The control is the row to read first. Against a random player the model performs
+identically to no model at all, which is what a correctly implemented predictor must
+do. The gains against structured players are therefore learned habit, not leakage.
 
-The control result is the one to read first: against a random player the proposed
-model performs **identically to no model at all**, which is what a correctly
-implemented predictor must do. The gains against structured players are therefore
-attributable to learned habit, not to leakage.
+### 5.2 How well is the model actually trained?
 
-### 5.2 Learning speed
+A predictor is only as good as the ceiling allows, so the ceiling was measured. An
+oracle that can see the player's own internal state — which objective they are
+walking to, whether they are mid-page — reaches **91.8%**. The remainder is the
+player's own randomness and is unpredictable by anything.
 
-Rolling top-1 accuracy against a habitual player rises from **45% to 89% within
-roughly 60 observed moves** — under a minute of play.
+![Accuracy against the measured ceiling](../out/fig_training.png)
+
+| Predictor | Held-out accuracy |
+|---|---|
+| No model | 48.2% |
+| Order-1 Markov | 57.6% |
+| **VOMM** | **85.2%** (settled: 89.0%) |
+| Oracle ceiling | 91.8% |
+
+That is **97% of the achievable signal**. Against a perfectly consistent
+player the model reaches **100%**, which settles whether it is capable of perfect
+prediction: it is, and the shortfall is the player's deviation rate.
+
+**Three attempts to close the gap, all negative and all retained as results:**
+a grid search over `k` and `α` on held-out facilities (no gain over the hand-picked
+values); tagging the context with the last objective room (+0.1 points); and
+`GoalVOMM`, which infers the player's current objective from movement direction and
+scored *worse*. Every mixture weight tried converged to the baseline as the weight
+went to zero — the tell that the goal signal carries no information the sequence
+model does not already hold. The variable-order context already encodes the
+objective cycle.
+
+### 5.3 Learning speed
+
+Rolling accuracy rises steeply inside the first minute of play, satisfying the
+cold-start requirement (§1.3) empirically.
 
 ![Rolling accuracy against observed moves](../out/fig_learning.png)
- This is the cold-start
-requirement (§1.3) satisfied empirically.
 
-### 5.3 Does prediction make a better antagonist?
+### 5.4 Does prediction make a better antagonist?
 
-Embodied pursuit: the entity occupies a room and moves one room per step — it must
-*intercept*, not teleport.
-
-| Entity behaviour | Captures per 1000 player moves |
-|---|---|
-| Random walk *(control)* | 99 |
-| Camp the busiest junction *(strong non-learning heuristic)* | 305 |
-| Order-1 Markov director | 350 |
-| VOMM, one-step targeting | 364 |
-| **VOMM interceptor (proposed)** | **390** |
+Embodied pursuit: the entity occupies a room and moves one room per window, so it
+must intercept rather than teleport.
 
 ![Captures per 1000 moves by entity behaviour](../out/fig_capture.png)
 
-**Two directors are separated here.** A one-step director targets the room it
-expects the player to enter next — but the entity also moves one room per step, so
-that room is usually unreachable in time and it chases perpetually one step behind.
-The interceptor instead rolls the model forward up to five steps and picks the
-earliest predicted room it can reach no later than the player does, weighted by the
-probability the player stays on that path. The same model, used properly, is worth
-26 more captures per 1000 moves.
+| Entity behaviour | Captures / 1000 moves |
+|---|---|
+| Random walk *(control)* | 95 |
+| Camp the busiest junction | 301 |
+| Order-1 Markov director | 342 |
+| VOMM, one-step targeting | 350 |
+| **VOMM interceptor** | **362** |
 
-The hub-camping baseline is included deliberately: a model that cannot beat "sit in
-the busiest room" has not earned its complexity. The proposed director achieves
-**3.7× the control** and **1.2× the strongest non-learning heuristic**.
+Hub-camping is included deliberately: a model that cannot beat "sit in the busiest
+room" has not earned its complexity. Note honestly that the model-driven directors
+sit within noise of one another — the clear separation is at prediction (§5.1), not
+at capture rate.
 
-### 5.4 How much is prediction worth as the facility grows?
+### 5.5 Does the advantage hold at scale?
 
-Hub-camping performs suspiciously well on a small graph. The suspicion is
-well-founded: on ten rooms with one dominant junction the player has nowhere else
-to go, so a naive heuristic looks competitive for reasons that have nothing to do
-with intelligence. This experiment tests whether that advantage survives scale.
+![Captures against facility size](../out/fig_scaling.png)
 
-![Captures per 1000 moves against facility size](../out/fig_scaling.png)
-
-| Rooms | Random *(control)* | Camp the hub | Order-1 Markov | **VOMM interceptor** | Advantage over hub |
+| Rooms | Random | Camp the hub | Order-1 | **VOMM interceptor** | Advantage |
 |---|---|---|---|---|---|
-| 10 | 103 | 298 | 340 | **389** | 1.30× |
-| 16 | 57 | 255 | 297 | **336** | 1.32× |
-| 24 | 38 | 165 | 205 | **256** | 1.55× |
-| 32 | 31 | 140 | 194 | **220** | 1.57× |
+| 10 | 98 | 295 | 332 | **360** | 1.22× |
+| 16 | 61 | 248 | 290 | **309** | 1.25× |
+| 24 | 38 | 159 | 213 | **238** | 1.49× |
+| 32 | 33 | 140 | 189 | **196** | 1.40× |
 
-Every strategy captures less on a larger map, as expected — the player has more
-places to be. But hub-camping decays fastest, and **the interceptor's advantage over
-it widens from 1.30× to 1.57×**. The honest reading of
-§5.3 is therefore that the ten-room result *understates* the value of prediction:
-the smaller the space, the less there is to predict.
+Hub-camping is only competitive on a small graph with one dominant junction. As the
+facility grows it decays fastest and the interceptor's advantage widens.
 
-### 5.5 Do the world-editing counter-moves matter?
+### 5.6 Do the world-editing counter-moves matter?
 
-Interception is only one of the Director's four moves. This experiment removes the
-entity entirely and isolates topology mutation: the player cycles objective rooms
-while the Director seals and rewires ahead of them.
+The entity is removed here, isolating topology mutation from hunting.
 
 ![Navigation cost with and without world editing](../out/fig_disruption.png)
 
-| Condition | Moves per objective lap |
-|---|---|
-| Facility left alone | 15.7 |
-| **Director sealing and rewiring ahead** | **25.2** |
+Sealing and rewiring ahead of the player raises the cost of completing an objective
+by **63%** (16.4 → 26.8 moves per lap). Every mutation passed a
+connectivity and reachability check, so no run was ever soft-locked.
 
-A **60% increase in the cost of completing an objective**, from
-350 rewires, 55 seals and 335 codebook poisonings across
-12 seeds. Every one of those mutations passed the connectivity and reachability
-check, so no run was ever soft-locked.
+### 5.7 Partial observation: what the sensors buy *(new)*
 
-### 5.6 Is sabotage aimed, or is it noise? *(a conditional result)*
+![Localisation against sensor coverage](../out/fig_localisation.png)
 
-A poisoned codebook only costs the player if they return to it, and costs them more
-the sooner they do. We measure moves elapsed before the player walks back into a
-poisoned room — lower means better-aimed — against a control that poisons a
-recorded room at random.
+| Doors wired | Uniform prior | Learned prior |
+|---|---|---|
+| 100% | 99.9% | 99.9% |
+| 80% | 87.2% | 86.1% |
+| 60% | 67.7% | 63.0% |
+| 40% | 54.0% | 50.8% |
+| 20% | 34.8% | 36.7% |
 
-| Player's reliance on rooms | Random targeting | Model targeting | Advantage |
-|---|---|---|---|
-| Uniform (visits every codebook each lap) | 6.8 | 6.8 | **none (-0.5%)** |
-| Uneven (leans on some rooms harder) | 8.8 | 7.8 | **12% faster** |
+A fully wired facility leaks everything, for the reason given in §3.6: silence
+proves the player stayed. Localisation falls roughly linearly as coverage drops.
 
-**This is reported as a negative result under the first condition.** When the player
-relies on every room equally, there is nothing for targeted sabotage to exploit and
-model-guided targeting performs no better than random. The counter-move only earns
-its place against a player with uneven habits — which is the realistic case, but the
-claim is conditional and should not be overstated.
+### 5.8 What the player can actually do about it *(new)*
 
-### 5.7 Can the player fight back by waiting? *(a negative result)*
+Measured per **completed objective**, not per window — a player caught less often
+only because they achieved less has not defended themselves. All strategies pay the
+same notebook cost, and the two sensor strategies use the same navigation as their
+baseline, so the comparison isolates the strategy rather than the movement code.
 
-Waiting is the natural counter-play to an interceptor: if it moves to where you are
-going, do not go. A fair adaptive antagonist must be beatable this way, so this
-experiment tests whether it is.
+![Captures per objective by player strategy](../out/fig_counterplay.png)
 
-| Player | Windows declined | Model accuracy against them | Captures / 1000 |
-|---|---|---|---|
-| Habitual | 23% | 46.6% | 304 |
-| **Evasive** | 35% | 41.9% | 299 |
+| Doors wired | Baseline | Waiting | Routing around | **Disabling 3 sensors** |
+|---|---|---|---|---|
+| 100% | 1.04 | 6.37 (+439%) | 1.04 (+0%) | **1.99 (+91%)** |
+| 60% | 2.46 | 4.62 (+80%) | 2.33 (-5%) | **1.94 (-21%)** |
+| 30% | 2.23 | 3.55 (+51%) | 2.18 (-2%) | **2.15 (-4%)** |
 
-Evasion **works against the model and fails against the outcome.** Declining a third
-of all windows costs the predictor 4.7 points of accuracy, but reduces the
-player's capture rate by only 1.7%.
+Three findings. **Waiting is catastrophic**, not merely useless. **Routing around
+sensors barely registers** — the detour costs more exposure than the concealment
+saves. **Killing sensors on the route you already use works, but only at moderate
+coverage**: at full coverage nine windows stood still in the open buys too little
+when every other door still reports you. The counter-play has a sweet spot, which is
+a design result as much as a measurement.
 
-The cause is the observation model, not the algorithm. In the current build the
-antagonist observes the player's position perfectly at every window. Under perfect
-observation, standing still cannot conceal you — it only converts you into a
-stationary target that the antagonist can walk to at its leisure. Degrading its
-*predictions* is worthless when it does not need to predict.
+### 5.9 Knowing *when* the player stops to write *(the open problem)*
 
-**This directly motivates the next design iteration.** The antagonist should sense
-the player through motion detectors on the doors rather than by omniscience, so that
-declining a window genuinely denies it information. That change converts the problem
-from fully-observed to partially-observed sequence prediction, and it is the single
-most valuable thing this experiment identified.
+![Recall on the dwell event](../out/fig_dwell.png)
 
-### 5.8 Is the time a player spends in their notebook learnable?
+Once the player writes realistically — a codebook copied once, not re-copied on
+every pass — dwell becomes rare (4% of windows) and accuracy stops meaning
+anything: "they always move" scores 96% while learning nothing. On **recall**, the
+honest measure for a rare event, the model catches **17%** of the moments the
+player stops, at 26% precision, against a majority-class baseline that catches
+none by construction.
 
-Dwell was initially treated as a fixed parameter of the simulated player. That is
-the wrong framing: **how long someone lingers is one of the most individual things
-they do.** A player who copies an entire lookup table before moving behaves nothing
-like one who takes a single row and runs, and the difference is learnable from their
-own play. It is also the *actionable* signal — "they will be in room D for three
-more windows" tells the antagonist how long it has to walk there, which
-next-room probability does not.
+Four attempts to improve it — including an explicit first-visit feature — all made
+it worse. Each split the context and lost more to data sparsity than it gained in
+signal. This is the clearest open problem in the project.
 
-Measured directly as a binary task: at each window, will this player decline to
-move? The baseline is the majority class, which is what you get from knowing nothing
-about the person.
+### 5.10 Invariant test suite
 
-![Accuracy predicting whether the player will decline the next window](../out/fig_dwell.png)
-
-| Predictor | Accuracy |
-|---|---|
-| Majority class — "they always move" | 54.5% |
-| **VOMM, all rooms** | **70.1%** |
-| VOMM, rooms with nothing to record | 99.9% |
-| VOMM, rooms holding a codebook | 66.9% |
-
-A lift of **15.6 points** over the baseline, and the breakdown is the
-interesting part. In rooms with nothing to record the model is essentially never
-wrong — it has learned the player does not linger where there is no work. In rooms
-that hold a codebook it is right two thirds of the time: it knows they may be
-writing, but not precisely when the page is finished. The residual uncertainty sits
-exactly where the genuine behavioural variation is.
-
-**An explicit dwell model adds nothing on top.** A hazard model over consecutive
-declines, used to commit the antagonist to walking at a player it believes is still
-writing, performed 2.0% *worse* than position-only interception
-(288 vs 294 captures per 1000). The reason is that once staying is a
-legal action, the sequence model already represents dwell: when it expects the
-player to linger, its rolled-forward path is simply the same room repeated, and the
-interceptor already walks there. Including `vₜ` in the candidate set is sufficient;
-modelling duration separately is redundant.
-
-### 5.9 Invariant test suite
-
-Nine invariants are asserted over 25 generated facilities and thousands of simulated
+Nine invariants asserted over 25 generated facilities and thousands of simulated
 moves (`model/test_invariants.py`, all passing):
 
 | Invariant | Guards against |
 |---|---|
 | Facility connected on construction | Unplayable generated levels |
-| `seal_door` never disconnects | Director cutting the map in half |
-| `rewire` never disconnects | Same, via door relocation |
+| `seal_door` never disconnects | The antagonist cutting the map in half |
+| `rewire` never disconnects | The same, via door relocation |
 | Uplink reachable from every room after mutation | **Soft-locked, unwinnable runs** |
-| Bots only move to adjacent rooms | Silent teleportation corrupting the telemetry |
-| Predictor output is a proper distribution over the candidate set | Malformed probabilities |
-| VOMM ≈ uniform on a random player | **Leakage in the evaluation** |
+| Bots move to an adjacent room or stay put | Silent teleportation corrupting telemetry |
+| Predictor output is a proper distribution | Malformed probabilities |
+| VOMM approximates uniform on a random player | **Leakage in the evaluation** |
 | Director never mutates a visible room | Fairness rule 1 |
 | Director never edits below its confidence gate | Fairness rule 2 |
 
-### 5.10 Interactive demonstration
+### 5.11 The playable build
 
-A browser demo runs the full loop live: room graph, per-room predicted
-probabilities, an entity that intercepts on prediction, codebook recording, and staying as a legal choice at every window, and all
-four Director counter-moves — interception, door sealing, room rewiring and codebook
-poisoning — each with a live counter, and each subject to the same fairness rules as
-the Python implementation (nothing visible is mutated; nothing happens below the
-confidence gate; no edit may disconnect the facility). It displays running VOMM accuracy against a
-no-model control and a plain-language readout of the strongest learned rule
-(e.g. *"from E you go to B 100% of the time, 13 observations"*).
+![The first-person build, with the antagonist's reasoning on screen](../out/fig_3d.png)
 
-Observed in a 102-window automated session: the player declined 32 windows (31%) to
-finish notebook pages, **VOMM ran at 47% against a no-model control at 36%**, and the
-Director intercepted 22 times while poisoning enough codebooks to corrupt 2 of 13
-transmitted signals. The player was told none of it. The confidence gate is visible
-in operation — the monitor reports "too unsure to intercept; hunting conventionally"
-whenever belief drops below the threshold.
+`demo/parity-3d.html` is the game: eight hexagonal cells generated as a room graph,
+first-person movement gated by the door clock, three codebooks to record and an
+uplink to reach, and an antagonist that hunts on the belief filter of §3.6 while
+narrating its own reasoning on the HUD — what tripped, how sure it is, what it
+expects next, and whether it is intercepting or sweeping.
 
----
+An automated playtest drives the same code a player does and completes the game:
+three codebooks recorded, uplink reached, signal away, having been caught once and
+recovered, with zero frames stuck on geometry across 6000 frames.
 
-### 5.11 Art direction: a walkable room study
-
-![Three hexagonal cells, rendered in hand-written WebGL](../out/fig_room.png)
-
-A second demo renders three hexagonal cells of the facility in hand-written WebGL —
-no engine, no libraries, running offline in any browser. It exists to make the art
-direction concrete rather than described: low-poly concrete built from the same room
-graph the predictor plays on, a single handheld light, heavy fog, and a retro pass
-(420x236 internal resolution, ordered dithering, colour quantisation, vignette).
-
-The geometry is the design: hexagonal cells whose sides are either doorways or walls,
-which is the room graph given physical form. Side count is the difficulty setting —
-fewer sides means fewer doors, so the player is easier to predict but has fewer
-escape routes.
-
-This is the target for milestone M3. **It is a study, not the game**: there is no
-entity in it, no clock, and no notebook.
+`demo/parity-game.html` is the same antagonist in a systems view, with its belief
+drawn as heat on the rooms, wired and dead doors distinguished, and a sensor the
+player can spend three windows to cut.
 
 ## 6. Roadmap
 
-| Milestone | Deliverable |
-|---|---|
-| M0 ✅ | Headless simulation core, telemetry, bot harness |
-| M1 ✅ | Predictor, baselines, controls, offline metrics and figures |
-| M2 ✅ | Director and counter-moves, validated headless |
-| M3 | Godot greybox first-person build + live prediction overlay |
-| M4 | Notebook vector editor and persistence |
-| M5 | Entity behaviour polish, atmosphere, audio, human playtest |
+| Milestone | Deliverable | State |
+|---|---|---|
+| M0 | Headless simulation core, telemetry, bot harness | Complete |
+| M1 | Predictor, baselines, controls, offline metrics | Complete |
+| M2 | Director and counter-moves, validated headless | Complete |
+| M6 | Door motion-sensors and partial observation | **Complete this cycle** |
+| M4 | Notebook, cipher and door clock, in the playable build | Complete |
+| M3b | First-person WebGL build with the AI inside it | **Playable** |
+| M3 | Godot port — engine tooling, lighting, animation | Next |
+| M5 | Human playtest; replace scripted players with real traces | Next |
+| M7 | Polygonal room tiles, side count as the difficulty setting | Planned |
+| M8 | Outbound register with pre-send tampering, in 3D | Planned |
 
-Art direction for M3 is settled: low-poly modular brutalist kit driven by the room
-graph, near-total darkness with a flashlight, heavy fog, and a retro
-post-processing pass (downscale, colour quantisation, dithering, vertex jitter) —
-chosen because it minimises modelling cost while remaining coherent.
+M6 was taken ahead of the engine port because the evidence pointed at it: the
+negative result in §5.7's predecessor identified perfect observation as the reason
+waiting was not a defence, and fixing the observation model was worth more than
+better rendering.
 
----
+The clearest open problems are **predicting when the player stops to write** (§5.9)
+and **replacing the simulated player with human traces** (M5). Every behavioural
+parameter in this report — the deviation rate, the writing model — is currently an
+assumption, and the playtest is what turns them into measurements.
 
 ## 7. References
 

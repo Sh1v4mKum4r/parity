@@ -1,19 +1,33 @@
-<!doctype html><html><head><meta charset="utf-8"><title>PARITY — Review III</title>
+"""Two-page review cheat sheet, generated from metrics so it cannot drift."""
+import json, subprocess
+from pathlib import Path
+
+ROOT = Path(__file__).parent.parent
+M = json.loads((ROOT / "out" / "metrics.json").read_text())
+T = json.loads((ROOT / "out" / "training.json").read_text())
+a, e4, e5 = M["e1_accuracy"], M["e4_pursuit"], M["e5_disruption"]
+e7, e10, e12 = M["e7_scaling"], M["e10_dwell_learned"], M["e12_counterplay"]
+sizes = sorted(int(k) for k in e7)
+pc = lambda k: f"{a[k]['top1']*100:.1f}%"
+commits = subprocess.run(["git", "-C", str(ROOT), "rev-list", "--count", "HEAD"],
+                         capture_output=True, text=True).stdout.strip()
+
+html = f"""<!doctype html><html><head><meta charset="utf-8"><title>PARITY — Review III</title>
 <style>
-@page { size: A4; margin: 13mm 12mm; }
-body { font-family: "Helvetica Neue", Arial, sans-serif; font-size: 9pt; line-height: 1.4; color:#16181a; margin:0; }
-h1 { font-size: 15.5pt; margin:0 0 1pt; }
-.sub { color:#6b7178; font-size:8.8pt; margin:0 0 8pt; }
-h2 { font-size:9.8pt; margin:11pt 0 4pt; padding-bottom:2pt; border-bottom:1.2pt solid #16181a; }
-table { width:100%; border-collapse:collapse; margin:3pt 0 5pt; font-size:8.4pt; }
-th { text-align:left; font-size:7.2pt; text-transform:uppercase; letter-spacing:.06em; color:#6b7178;
-     border-bottom:1pt solid #16181a; padding:2.5pt 5pt 2.5pt 0; }
-td { border-bottom:.5pt solid #dfe3e7; padding:2.5pt 5pt 2.5pt 0; vertical-align:top; }
-.q { font-weight:700; margin:5.5pt 0 1pt; }
-.a { margin:0 0 3pt; color:#23262a; }
-.box { border:1pt solid #2a78d6; background:#f1f6fc; padding:5pt 7pt; margin:4pt 0; }
-.warn { border-color:#eb6834; background:#fff6f0; }
-strong.k { color:#2a78d6; }
+@page {{ size: A4; margin: 13mm 12mm; }}
+body {{ font-family: "Helvetica Neue", Arial, sans-serif; font-size: 9pt; line-height: 1.4; color:#16181a; margin:0; }}
+h1 {{ font-size: 15.5pt; margin:0 0 1pt; }}
+.sub {{ color:#6b7178; font-size:8.8pt; margin:0 0 8pt; }}
+h2 {{ font-size:9.8pt; margin:11pt 0 4pt; padding-bottom:2pt; border-bottom:1.2pt solid #16181a; }}
+table {{ width:100%; border-collapse:collapse; margin:3pt 0 5pt; font-size:8.4pt; }}
+th {{ text-align:left; font-size:7.2pt; text-transform:uppercase; letter-spacing:.06em; color:#6b7178;
+     border-bottom:1pt solid #16181a; padding:2.5pt 5pt 2.5pt 0; }}
+td {{ border-bottom:.5pt solid #dfe3e7; padding:2.5pt 5pt 2.5pt 0; vertical-align:top; }}
+.q {{ font-weight:700; margin:5.5pt 0 1pt; }}
+.a {{ margin:0 0 3pt; color:#23262a; }}
+.box {{ border:1pt solid #2a78d6; background:#f1f6fc; padding:5pt 7pt; margin:4pt 0; }}
+.warn {{ border-color:#eb6834; background:#fff6f0; }}
+strong.k {{ color:#2a78d6; }}
 </style></head><body>
 
 <h1>PARITY — Review III cheat sheet</h1>
@@ -34,29 +48,29 @@ is the application: the AI lives inside a playable first-person build and narrat
 <table>
 <tr><th>Result</th><th>Value</th><th>The point</th></tr>
 <tr><td>Next-move accuracy, habitual player</td>
-    <td>83.6% vs 60.0% (order-1) vs 39.1% (none)</td>
+    <td>{pc('habitual|vomm')} vs {pc('habitual|markov-1')} (order-1) vs {pc('habitual|uniform')} (none)</td>
     <td>It learns routes</td></tr>
 <tr><td>Same, random player <em>(the control)</em></td>
-    <td>26.7% vs 26.9%</td><td><strong>Identical — no leakage</strong></td></tr>
+    <td>{pc('random|vomm')} vs {pc('random|uniform')}</td><td><strong>Identical — no leakage</strong></td></tr>
 <tr><td>How well trained, vs the ceiling</td>
-    <td>89.0% against a 91.8% oracle ceiling</td>
-    <td><strong>97% of achievable signal; 100% vs a consistent player</strong></td></tr>
+    <td>{T['VOMM (settled)']*100:.1f}% against a {T['oracle ceiling']*100:.1f}% oracle ceiling</td>
+    <td><strong>{T['VOMM (settled)']/T['oracle ceiling']*100:.0f}% of achievable signal; 100% vs a consistent player</strong></td></tr>
 <tr><td>Captures / 1000 moves</td>
-    <td>random 95 · hub-camp 301 · order-1 342 · VOMM 350</td>
+    <td>random {e4['random-walk']['per_1000']:.0f} · hub-camp {e4['hub-camp']['per_1000']:.0f} · order-1 {e4['markov-1']['per_1000']:.0f} · VOMM {e4['vomm']['per_1000']:.0f}</td>
     <td>Any model beats none</td></tr>
 <tr><td>Advantage vs facility size</td>
-    <td>1.22× at 10 rooms → 1.40× at 32</td>
+    <td>{e7[str(sizes[0])]['advantage_vs_hub']:.2f}× at {sizes[0]} rooms → {e7[str(sizes[-1])]['advantage_vs_hub']:.2f}× at {sizes[-1]}</td>
     <td>Prediction matters more at scale</td></tr>
 <tr><td>World editing (no entity)</td>
-    <td>+63% cost per objective</td><td>No run ever soft-locked</td></tr>
+    <td>+{e5['full-director']['overhead_pct']:.0f}% cost per objective</td><td>No run ever soft-locked</td></tr>
 <tr><td>Counter-play, 60% of doors wired</td>
-    <td>waiting +80% · disabling 3 sensors -21%</td>
+    <td>waiting {e12['0.60']['evasive']['risk_change_pct']:+.0f}% · disabling 3 sensors {e12['0.60']['disable_3']['risk_change_pct']:+.0f}%</td>
     <td>Killing sensors works, waiting does not</td></tr>
 <tr><td>Predicting WHEN you stop to write</td>
-    <td>recall 17% vs 0% baseline</td><td><strong>The open problem</strong></td></tr>
+    <td>recall {e10['vomm_recall']*100:.0f}% vs 0% baseline</td><td><strong>The open problem</strong></td></tr>
 </table>
 <p style="font-size:8pt;color:#6b7178;margin:0">10 rooms, 1200–1500 windows × 12 seeds, prequential. Training
-figures on 12 facilities never used to choose anything. 9 invariants, 20 commits.</p>
+figures on 12 facilities never used to choose anything. 9 invariants, {commits} commits.</p>
 
 <h2>Questions you will get</h2>
 
@@ -72,8 +86,8 @@ same room has different successors depending on how you entered it.</p>
 
 <p class="q">How do you know it's trained well?</p>
 <p class="a">I measured the ceiling. An oracle that sees the player's own internal state reaches
-91.8%; the rest is their coin-flips. The model reaches 89.0% from
-behaviour alone — 97% of what's achievable — and 100% against a
+{T['oracle ceiling']*100:.1f}%; the rest is their coin-flips. The model reaches {T['VOMM (settled)']*100:.1f}% from
+behaviour alone — {T['VOMM (settled)']/T['oracle ceiling']*100:.0f}% of what's achievable — and 100% against a
 perfectly consistent player. Grid search, intent tagging and goal inference all failed to improve it.</p>
 
 <p class="q">How do you know it isn't cheating or overfitting?</p>
@@ -82,8 +96,8 @@ construction. And the control: against a random player it scores the same as no 
 
 <p class="q">Can the player beat it?</p>
 <p class="a">Yes, but not by waiting — waiting is catastrophic
-(+439% at full coverage). The counter-play is spending a dangerous task
-to kill a sensor on the route you already use: -21% at 60% coverage.
+({e12['1.00']['evasive']['risk_change_pct']:+.0f}% at full coverage). The counter-play is spending a dangerous task
+to kill a sensor on the route you already use: {e12['0.60']['disable_3']['risk_change_pct']:+.0f}% at 60% coverage.
 It backfires at full coverage, so it has a sweet spot.</p>
 
 <p class="q">Is it half the game?</p>
@@ -98,7 +112,7 @@ makes the on-screen explanation possible.</p>
 
 <div class="box warn"><strong>Concede these fast, don't defend them.</strong>
 (1) No human playtest data — everything is against scripted players.
-(2) Predicting when you stop to write is weak (17% recall) and four attempts to fix it
+(2) Predicting when you stop to write is weak ({e10['vomm_recall']*100:.0f}% recall) and four attempts to fix it
 made it worse. (3) The first-person build is hand-written WebGL, not an engine; the Godot port hasn't started.
 (4) VOMM and order-1 are within noise on capture rate — the clear gap is at prediction, not pursuit.</div>
 
@@ -113,4 +127,6 @@ doors, and a sensor you can cut. Toggle AI view off, then on — that contrast i
 if they press on rigour.</td></tr>
 </table>
 
-</body></html>
+</body></html>"""
+(ROOT / "out" / "cheatsheet.html").write_text(html)
+print("cheat sheet HTML built")

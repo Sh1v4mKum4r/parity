@@ -2,116 +2,65 @@
 
 **An Adaptive Horror Game Driven by Online Player-Trajectory Prediction**
 
-A horror antagonist that builds a live behavioural model of *you* and acts on its
-predictions — intercepting where you are going rather than chasing where you are,
-and quietly degrading the information you have come to depend on.
+A horror antagonist that builds a live behavioural model of *you* and acts on it —
+intercepting where you are going, and quietly degrading the information you depend
+on. The game is the application: the AI lives inside a playable first-person build
+and explains its own reasoning on screen.
 
-## Review deliverables
+## Play it
 
 | File | What it is |
 |---|---|
-| `docs/PARITY-review-deck.pptx` | 22-slide review deck, structured to the marking rubric |
-| `docs/PARITY-project-report.pdf` | Full project report with figures and 22 references |
-| `docs/PARITY-project-report.md` | Same report, source form |
-| `docs/PARITY-cheat-sheet.pdf` | **Two-page review cheat sheet — numbers, likely questions, demo order** |
-| `demo/parity-demo.html` | **Playable model demo — any browser, no server, no internet** |
-| `demo/parity-room.html` | **Walkable 3D room study — WASD + mouse, hand-written WebGL, no engine** |
-| `demo/parity-notebook.html` | **Freehand notebook prototype — stroke-based, undo, pages, local save** |
-| `demo/parity-slice.html` | **Vertical slice — door clock, notebook, register, and the AI tampering with a staged byte** |
-| `out/*.png` | Result figures and architecture diagram |
-| `out/metrics.json` | Raw numbers behind every figure |
+| `demo/parity-3d.html` | **The game.** First person, WASD. Record three codebooks, reach the uplink, survive the thing that hears the doors you use. |
+| `demo/parity-game.html` | **Systems view.** The same AI with its belief drawn on the map, wired vs dead doors, and a sensor you can cut. |
+| `demo/parity-notebook.html` | Freehand notebook — stroke-based, Excalidraw-style erase, pages. |
+| `demo/parity-room.html` | Art-direction study for the 3D layer. |
 
-Open the demo hands-free with `demo/parity-demo.html?auto=1` — a scripted habitual
-player drives it while the model learns on screen.
+Everything runs offline in a browser. Nothing to install.
+
+## Documents
+
+| File | What it is |
+|---|---|
+| `docs/PARITY-review3-deck.pptx` | Review III deck, 26 slides, speaker notes |
+| `docs/PARITY-project-report.pdf` | Full report with figures and references |
+| `docs/PARITY-cheat-sheet.pdf` | Two-page cheat sheet: numbers, likely questions, demo order |
 
 ## Running the model
 
 ```
-python3 model/evaluate.py        # runs all four experiments, writes out/metrics.json
-python3 model/make_figures.py    # regenerates the result figures
-python3 model/make_arch.py       # regenerates the architecture diagram
-python3 model/make_deck.py       # rebuilds the PPTX from current metrics
+python3 model/evaluate.py         # 12 experiments -> out/metrics.json
+python3 model/test_invariants.py  # 9 invariants over 25 generated facilities
+python3 model/tune.py             # grid search, validated on held-out facilities
+python3 model/make_figures.py     # regenerate every figure
+python3 model/make_deck3.py       # rebuild the deck from metrics
 ```
 
-No dependencies beyond `numpy`, `matplotlib`, and `python-pptx`.
+## Headline results
 
-## Module layout
-
-```
-model/
-  facility.py     room graph, mutation ops, connectivity invariants
-  bots.py         scripted players: habitual, explorer, random (the control)
-  predictors.py   UniformNeighbour · MarkovOrder1 · VOMM (proposed)
-  director.py     turns beliefs into counter-moves; confidence-gated
-  test_invariants.py  9 safety and fairness invariants
-  evaluate.py     four experiments, all seeded and prequential
-```
-
-## Results
-
-Prediction accuracy (top-1 next room, 10 rooms, 1200 steps x 12 seeds):
+Next-move prediction, held-out:
 
 | Player | No model | Order-1 Markov | **VOMM** |
 |---|---|---|---|
-| Habitual | 30.6% | 46.2% | **61.1%** |
+| Habitual | 39.1% | 60.0% | **83.6%** |
 | Explorer | 31.2% | 53.0% | **69.6%** |
-| Evasive *(waits on purpose)* | 26.4% | 45.6% | **55.7%** |
 | Random *(control)* | 26.9% | 25.9% | **26.7%** |
 
 The control is the important row: against a random player the model performs
-identically to no model at all, which is what a correctly implemented predictor
-must do.
+identically to no model, so the gains are learned habit rather than leakage.
 
-Embodied pursuit — an entity that occupies a room and moves one room per step:
+**How well trained.** An oracle that sees the player's internal state reaches
+91.8%; the model reaches 89.0% from behaviour alone — 97% of the
+achievable signal, and 100% against a perfectly consistent player.
 
-| Entity behaviour | Captures / 1000 moves |
-|---|---|
-| Random walk *(control)* | 108 |
-| Camp the busiest junction | 261 |
-| Order-1 Markov director | 310 |
-| VOMM, one-step targeting | 317 |
-| VOMM interceptor (5-step lookahead) | 302 |
-
-Every model-driven antagonist beats the non-learning baselines, but the models sit
-within noise of each other, and five-step lookahead is now slightly *worse* than
-one-step: at 61% single-step accuracy, rollout error compounds faster than the
-extra foresight pays. The advantage over hub-camping widens with facility size —
-1.30x at 10 rooms, 1.57x at 32 — so the small-facility number understates it.
-
-World editing, with the entity removed so topology mutation is isolated:
-
-| Condition | Moves per objective lap |
-|---|---|
-| Facility left alone | 15.7 |
-| **Director sealing and rewiring ahead** | **25.2** (60% more) |
-
-Targeted sabotage is a **conditional** result: it gives no advantage over random
-targeting when the player relies on every room equally, and an 12% advantage when
-their reliance is uneven. Reported as such in the report, section 5.5.
-
-**Waiting does not defend (a negative result).** An evasive player who declines 35%
-of windows costs the model 4.7 points of accuracy but reduces their capture risk
-by only 1.7%. The antagonist currently observes position perfectly, so standing
-still cannot conceal — it only parks you. Next milestone is door motion-sensors and
-partial observation, which is what this experiment identified.
-
-**Dwell is learned, not assumed.** How long a player lingers is behaviour, and the
-model picks it up: predicting "will they decline this window?" it scores
-70% against a 54% majority-class baseline — 100% in rooms with nothing to
-record, 67% in rooms holding a codebook. An explicit dwell model adds nothing
-on top: once staying is a legal action the sequence model already represents it.
-
-## Verification
-
-```
-python3 model/test_invariants.py     # 9 invariants, 25 generated facilities
-```
-
-Covers connectivity under mutation, objective reachability (no soft-locks),
-distribution well-formedness, absence of leakage on a random player, and both
-Director fairness rules.
+**Counter-play.** Waiting is catastrophic (+439% at full sensor coverage).
+Spending dangerous tasks to kill sensors on your own route cuts risk
+-21% at 60% coverage, but backfires at full coverage. The counter-play
+has a sweet spot.
 
 ## Status
 
-M0–M2 complete (simulation core, predictor, director). M3 next: the Godot
-first-person vertical slice with a live prediction overlay.
+The complete core loop is playable in first person. What remains is the Godot port,
+audio and content — presentation rather than mechanism. The open problems are
+predicting *when* the player stops to write, and replacing scripted players with
+human playtest traces.
