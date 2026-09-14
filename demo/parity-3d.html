@@ -1,0 +1,636 @@
+<title>Parity Room Study</title>
+<style>
+  :root{ --ink:#e8dcc4; --muted:#8a7f6a; --amber:#ffb545; --line:#2e2920;
+         --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:#080706;color:var(--ink);font-family:var(--mono);overflow:hidden}
+  #cv{display:block;width:100vw;height:100vh;cursor:crosshair}
+  .hud{position:fixed;left:18px;top:16px;font-size:11px;line-height:1.6;color:var(--muted);
+       text-shadow:0 1px 3px #000;pointer-events:none;letter-spacing:.04em}
+  .hud b{color:var(--amber);font-weight:400}
+  .start{position:fixed;inset:0;display:grid;place-items:center;background:rgba(8,7,6,.86);
+         text-align:center;cursor:pointer;z-index:5}
+  .start div{max-width:44ch}
+  .start h1{font-size:19px;letter-spacing:.24em;color:var(--amber);margin:0 0 14px;font-weight:700}
+  .start p{font-size:12px;color:var(--muted);line-height:1.75;margin:0 0 8px}
+  .start .go{margin-top:18px;font-size:11px;color:var(--ink);border:1px solid var(--line);
+              padding:9px 14px;display:inline-block;letter-spacing:.12em}
+  .tag{position:fixed;right:18px;bottom:14px;font-size:10px;color:#4a453b;letter-spacing:.1em}
+</style>
+
+<canvas id="cv"></canvas>
+<div class="hud">
+  P A R I T Y<br>
+  <b>W A S D</b> move &nbsp; <b>MOUSE</b> or <b>ARROWS</b> look &nbsp; <b>SHIFT</b> hurry &nbsp; <b>ESC</b> release<br>
+  <span id="loc"></span><br><span id="note" style="color:#c9873a"></span>
+</div>
+<div class="tag">PARITY &mdash; first-person build</div>
+<div id="hud2" style="position:fixed;right:16px;top:14px;width:330px;font-size:11px;
+     color:#b3a68c;text-shadow:0 1px 3px #000;pointer-events:none;letter-spacing:.02em">
+  <div style="border:1px solid #2e2920;background:rgba(20,18,14,.82);padding:8px 10px;margin-bottom:8px">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <b id="phase3" style="color:#8a7f6a;letter-spacing:.16em;font-size:12px">LOCKDOWN</b>
+      <span id="obj3" style="color:#ffb545"></span>
+    </div>
+    <div style="height:6px;background:#1d1a14;border:1px solid #2e2920;margin-top:6px">
+      <i id="bar3" style="display:block;height:100%;background:#ffb545;width:100%"></i>
+    </div>
+  </div>
+  <div style="border:1px solid #2e2920;background:rgba(20,18,14,.82);padding:8px 10px">
+    <div style="color:#8a7f6a;letter-spacing:.16em;font-size:9.5px;margin-bottom:6px">
+      WHAT IT IS DOING &mdash; AND WHY</div>
+    <div id="ailog3" style="display:flex;flex-direction:column;gap:3px;line-height:1.45"></div>
+    <div style="display:flex;justify-content:space-between;margin-top:7px;color:#8a7f6a">
+      <span>sure of your room</span><span id="conf3" style="color:#e8dcc4">&mdash;</span></div>
+    <div style="display:flex;justify-content:space-between;color:#8a7f6a">
+      <span>it thinks you are in</span><span id="map3" style="color:#e8dcc4">&mdash;</span></div>
+  </div>
+</div>
+<div class="start" id="start"><div>
+  <h1>P A R I T Y</h1>
+  <p>Eight cells of the facility. Record three codebooks, then reach the uplink.</p>
+  <p>Doors all unlock together for a few seconds, then seal. Something is in here with
+     you, it hears the doors you use, and it tells you what it is thinking &mdash; top right.</p>
+  <p style="margin-top:14px">If your browser blocks mouse capture, drag to look or use the arrow keys.</p>
+  <div class="go">CLICK TO ENTER</div>
+</div></div>
+
+<script>
+(() => {
+"use strict";
+const cv = document.getElementById("cv");
+const gl = cv.getContext("webgl2", {antialias:false, alpha:false});
+if(!gl){ document.body.innerHTML = "<p style='padding:40px;font-family:monospace'>WebGL2 unavailable.</p>"; return; }
+
+// ---------------------------------------------------------------- math
+const V = {
+  sub:(a,b)=>[a[0]-b[0],a[1]-b[1],a[2]-b[2]],
+  cross:(a,b)=>[a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]],
+  norm:a=>{const l=Math.hypot(a[0],a[1],a[2])||1; return [a[0]/l,a[1]/l,a[2]/l];}
+};
+function perspective(fovy, asp, n, f){
+  const t = 1/Math.tan(fovy/2);
+  return [t/asp,0,0,0, 0,t,0,0, 0,0,(f+n)/(n-f),-1, 0,0,2*f*n/(n-f),0];
+}
+function lookAt(eye, ctr, up){
+  const z = V.norm(V.sub(eye,ctr)), x = V.norm(V.cross(up,z)), y = V.cross(z,x);
+  return [x[0],y[0],z[0],0, x[1],y[1],z[1],0, x[2],y[2],z[2],0,
+    -(x[0]*eye[0]+x[1]*eye[1]+x[2]*eye[2]),
+    -(y[0]*eye[0]+y[1]*eye[1]+y[2]*eye[2]),
+    -(z[0]*eye[0]+z[1]*eye[1]+z[2]*eye[2]), 1];
+}
+function mul(a,b){
+  const o = new Array(16);
+  for(let i=0;i<4;i++) for(let j=0;j<4;j++){
+    let s=0; for(let k=0;k<4;k++) s += a[k*4+j]*b[i*4+k];
+    o[i*4+j]=s;
+  }
+  return o;
+}
+
+// ---------------------------------------------------------------- geometry
+// Flat-top hexagonal cells. Each side is either a doorway (to a neighbouring
+// cell) or solid wall -- which is exactly the room-graph the predictor plays on,
+// given physical form. Side count is the difficulty setting.
+const R = 4.6, H = 3.5, DOOR_W = 1.5, DOOR_H = 2.35;
+const CELLS = [[0,0],[1,0],[0,1],[-1,1],[-1,0],[0,-1],[1,-1],[1,1]];
+const key = (q,r) => q+","+r;
+const has = (q,r) => CELLS.some(c => c[0]===q && c[1]===r);
+const NB = [[1,0],[0,1],[-1,1],[-1,0],[0,-1],[1,-1]];
+
+function cellCenter(q,r){ return [R*1.732*(q + r/2), 0, R*1.5*r]; }
+
+const pos=[], nrm=[], shade=[];
+const DOORWAYS=[];
+function tri(a,b,c,s,forceN){
+  const n = forceN || V.norm(V.cross(V.sub(b,a), V.sub(c,a)));
+  for(const p of [a,b,c]){ pos.push(p[0],p[1],p[2]); nrm.push(n[0],n[1],n[2]); shade.push(s); }
+}
+function quad(a,b,c,d,s){ tri(a,b,c,s); tri(a,c,d,s); }
+
+function corner(cx,cz,i){
+  const ang = Math.PI/180*(60*i - 30);
+  return [cx + R*Math.cos(ang), 0, cz + R*Math.sin(ang)];
+}
+
+// Which shared walls actually have a doorway. A spanning tree guarantees the
+// facility is connected; a few extras give it loops, so route choice exists.
+const DOORS = new Set();
+(function planDoors(){
+  const key=(q,r)=>q+","+r;
+  const idx = new Map(CELLS.map((c,i)=>[key(c[0],c[1]), i]));
+  const seen = new Set([0]), order=[0];
+  const rng = (()=>{ let s=99; return ()=>(s=(s*1664525+1013904223)>>>0)/4294967296; })();
+  while(seen.size < CELLS.length){
+    const from = order[Math.floor(rng()*order.length)];
+    const [q,r] = CELLS[from];
+    const dirs = NB.map((d,i)=>[d,i]).sort(()=>rng()-0.5);
+    let placed=false;
+    for(const [d,i] of dirs){
+      const j = idx.get(key(q+d[0], r+d[1]));
+      if(j===undefined || seen.has(j)) continue;
+      DOORS.add(from+"-"+j); DOORS.add(j+"-"+from);
+      seen.add(j); order.push(j); placed=true; break;
+    }
+    if(!placed && order.length>1) order.splice(order.indexOf(from),1);
+  }
+  for(let a=0;a<CELLS.length;a++){
+    const [q,r]=CELLS[a];
+    NB.forEach((d,i)=>{
+      const b = idx.get(key(q+d[0], r+d[1]));
+      if(b!==undefined && !DOORS.has(a+"-"+b) && rng()<0.34){
+        DOORS.add(a+"-"+b); DOORS.add(b+"-"+a);
+      }
+    });
+  }
+})();
+const cellIndex = (q,r) => CELLS.findIndex(c=>c[0]===q && c[1]===r);
+const hasDoor = (a,b) => DOORS.has(a+"-"+b);
+
+for(const [q,r] of CELLS){
+  const me = cellIndex(q,r);
+  const [cx,,cz] = cellCenter(q,r);
+  for(let i=0;i<6;i++){
+    const a = corner(cx,cz,i), b = corner(cx,cz,(i+1)%6);
+    // floor + ceiling fans
+    tri([cx,0,cz], a, b, 0.42, [0,1,0]);
+    tri([cx,H,cz], [b[0],H,b[2]], [a[0],H,a[2]], 0.20, [0,-1,0]);
+
+    const nb = NB[i];
+    const other = cellIndex(q+nb[0], r+nb[1]);
+    const open = other >= 0 && hasDoor(me, other);
+    if(!open){
+      quad([a[0],0,a[2]],[b[0],0,b[2]],[b[0],H,b[2]],[a[0],H,a[2]], 0.52);
+    } else {
+      // wall with a doorway punched through it
+      const mx=(a[0]+b[0])/2, mz=(a[2]+b[2])/2;
+      const dx=(b[0]-a[0]), dz=(b[2]-a[2]);
+      const len=Math.hypot(dx,dz), ux=dx/len, uz=dz/len;
+      const hw=DOOR_W/2;
+      const l1=[mx-ux*hw, 0, mz-uz*hw], r1=[mx+ux*hw, 0, mz+uz*hw];
+      DOORWAYS.push({ a: me, b: other, x: mx, z: mz, ux, uz });
+      quad([a[0],0,a[2]], l1, [l1[0],H,l1[2]], [a[0],H,a[2]], 0.52);
+      quad(r1, [b[0],0,b[2]], [b[0],H,b[2]], [r1[0],H,r1[2]], 0.52);
+      quad([l1[0],DOOR_H,l1[2]], [r1[0],DOOR_H,r1[2]], [r1[0],H,r1[2]], [l1[0],H,l1[2]], 0.46);
+      // door jambs, so the opening reads as built rather than cut
+      const jd = 0.22;
+      quad([l1[0],0,l1[2]], [l1[0]-uz*jd,0,l1[2]+ux*jd], [l1[0]-uz*jd,DOOR_H,l1[2]+ux*jd], [l1[0],DOOR_H,l1[2]], 0.62);
+      quad([r1[0]-uz*jd,0,r1[2]+ux*jd], [r1[0],0,r1[2]], [r1[0],DOOR_H,r1[2]], [r1[0]-uz*jd,DOOR_H,r1[2]+ux*jd], 0.62);
+    }
+  }
+  // a low plinth in the middle of each cell -- a console you can read
+  const s=0.85, hgt=0.62;
+  const c=[cx,0,cz];
+  const p0=[c[0]-s,0,c[2]-s], p1=[c[0]+s,0,c[2]-s], p2=[c[0]+s,0,c[2]+s], p3=[c[0]-s,0,c[2]+s];
+  quad([p0[0],hgt,p0[2]],[p1[0],hgt,p1[2]],[p2[0],hgt,p2[2]],[p3[0],hgt,p3[2]], 0.44);
+  quad(p0,p1,[p1[0],hgt,p1[2]],[p0[0],hgt,p0[2]], 0.40);
+  quad(p1,p2,[p2[0],hgt,p2[2]],[p1[0],hgt,p1[2]], 0.40);
+  quad(p2,p3,[p3[0],hgt,p3[2]],[p2[0],hgt,p2[2]], 0.40);
+  quad(p3,p0,[p0[0],hgt,p0[2]],[p3[0],hgt,p3[2]], 0.40);
+}
+
+// ---------------------------------------------------------------- shaders
+function sh(type, src){
+  const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
+  if(!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
+  return s;
+}
+function prog(vs, fs){
+  const p = gl.createProgram();
+  gl.attachShader(p, sh(gl.VERTEX_SHADER, vs)); gl.attachShader(p, sh(gl.FRAGMENT_SHADER, fs));
+  gl.linkProgram(p);
+  if(!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+  return p;
+}
+
+const scene = prog(`#version 300 es
+in vec3 aPos; in vec3 aNrm; in float aShade;
+uniform mat4 uVP; uniform vec3 uOffset;
+out vec3 vPos; out vec3 vNrm; out float vShade;
+void main(){ vec3 w = aPos + uOffset; vPos=w; vNrm=aNrm; vShade=aShade; gl_Position = uVP * vec4(w,1.0); }`,
+`#version 300 es
+precision highp float;
+in vec3 vPos; in vec3 vNrm; in float vShade;
+uniform vec3 uEye; uniform vec3 uDir;
+out vec4 frag;
+void main(){
+  vec3 d = vPos - uEye;
+  float dist = length(d);
+  vec3 L = d / max(dist, 0.0001);
+  // handheld light: a tight cone with a soft falloff, the only real source
+  float cone = dot(L, normalize(uDir));
+  float spot = smoothstep(0.72, 0.955, cone);
+  float atten = 1.0 / (1.0 + 0.11*dist + 0.026*dist*dist);
+  vec3 N = normalize(vNrm);
+  if(dot(N, -L) < 0.0) N = -N;          // two-sided: never a black surface
+  float lambert = max(dot(N, -L), 0.0);
+  float spill = smoothstep(0.05, 0.75, cone) * atten * lambert * 0.85;  // torches spill
+  float lit = spot * atten * lambert * 3.2 + spill;
+  float ambient = 0.055 + 0.040 * lambert;      // enough to read on a projector
+  vec3 concrete = vec3(0.74, 0.72, 0.68) * vShade;
+  vec3 col = concrete * (lit + ambient);
+  col += vec3(1.0, 0.86, 0.62) * lit * 0.16;    // warm tungsten bias
+  float fog = 1.0 - exp(-dist * 0.072);
+  col = mix(col, vec3(0.020, 0.019, 0.017), fog);
+  frag = vec4(col, 1.0);
+}`);
+
+// retro pass: quantise, dither, vignette, scanline -- the whole art budget
+const post = prog(`#version 300 es
+in vec2 aP; out vec2 vUv;
+void main(){ vUv = aP*0.5+0.5; gl_Position = vec4(aP,0.0,1.0); }`,
+`#version 300 es
+precision highp float;
+in vec2 vUv; uniform sampler2D uTex; uniform vec2 uRes; uniform float uTime;
+out vec4 frag;
+float bayer(vec2 p){
+  int x = int(mod(p.x,4.0)), y = int(mod(p.y,4.0));
+  int i = y*4+x;
+  float m[16] = float[16](0.,8.,2.,10., 12.,4.,14.,6., 3.,11.,1.,9., 15.,7.,13.,5.);
+  return m[i]/16.0 - 0.5;
+}
+void main(){
+  vec3 c = texture(uTex, vUv).rgb;
+  vec2 px = vUv * uRes;
+  c += bayer(px) * 0.055;                        // ordered dither before quantising
+  float levels = 22.0;
+  c = floor(c * levels + 0.5) / levels;
+  float d = distance(vUv, vec2(0.5));
+  c *= smoothstep(1.02, 0.30, d);                // vignette
+  c *= 0.93 + 0.07 * sin(px.y * 3.14159);        // faint scanline
+  frag = vec4(c, 1.0);
+}`);
+
+// ---------------------------------------------------------------- buffers
+const vao = gl.createVertexArray(); gl.bindVertexArray(vao);
+function attrib(p, name, data, size){
+  const b = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, b);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(data), gl.STATIC_DRAW);
+  const loc = gl.getAttribLocation(p, name);
+  gl.enableVertexAttribArray(loc);
+  gl.vertexAttribPointer(loc, size, gl.FLOAT, false, 0, 0);
+}
+attrib(scene, "aPos", pos, 3);
+attrib(scene, "aNrm", nrm, 3);
+attrib(scene, "aShade", shade, 1);
+const VCOUNT = pos.length/3;
+
+// the thing that hunts you: a tall, flat, wrong-looking slab
+const evao = gl.createVertexArray(); gl.bindVertexArray(evao);
+const ep=[], en=[], es=[];
+(function buildEntity(){
+  const w=0.34, h=2.05, d=0.20;
+  const box=(x0,y0,z0,x1,y1,z1,sh)=>{
+    const P=[[x0,y0,z0],[x1,y0,z0],[x1,y1,z0],[x0,y1,z0],[x0,y0,z1],[x1,y0,z1],[x1,y1,z1],[x0,y1,z1]];
+    const F=[[0,1,2,3],[5,4,7,6],[4,0,3,7],[1,5,6,2],[3,2,6,7],[4,5,1,0]];
+    const NRM=[[0,0,-1],[0,0,1],[-1,0,0],[1,0,0],[0,1,0],[0,-1,0]];
+    F.forEach((f,fi)=>{
+      [[0,1,2],[0,2,3]].forEach(t=>t.forEach(k=>{
+        ep.push(...P[f[k]]); en.push(...NRM[fi]); es.push(sh);
+      }));
+    });
+  };
+  box(-w,0,-d, w,h,d, 0.30);            // body
+  box(-w*0.55,h,-d*0.8, w*0.55,h+0.30,d*0.8, 0.22);   // head
+})();
+attrib(scene, "aPos", ep, 3);
+attrib(scene, "aNrm", en, 3);
+attrib(scene, "aShade", es, 1);
+const ECOUNT = ep.length/3;
+gl.bindVertexArray(null);
+
+const qvao = gl.createVertexArray(); gl.bindVertexArray(qvao);
+attrib(post, "aP", [-1,-1, 3,-1, -1,3], 2);
+gl.bindVertexArray(null);
+
+// low-res render target: the resolution IS the art direction
+const LOW_W = 420, LOW_H = 236;
+const tex = gl.createTexture();
+gl.bindTexture(gl.TEXTURE_2D, tex);
+gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, LOW_W, LOW_H, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+const depth = gl.createRenderbuffer();
+gl.bindRenderbuffer(gl.RENDERBUFFER, depth);
+gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT16, LOW_W, LOW_H);
+const fbo = gl.createFramebuffer();
+gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, depth);
+gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+
+// ---------------------------------------------------------------- the game
+const CC = CELLS.map(([q,r]) => { const c = cellCenter(q,r); return {x:c[0], z:c[2]}; });
+const GLYPH = "ABCDEFGH";
+const LOCKDOWN = 7.0, WINDOW = 3.0;
+let phase = "lock", timer = LOCKDOWN, curCell = 0, doorsOpen = false;
+let entityCell = 5, caught = 0, visited = new Set(), objective = 0, msg = "";
+
+// which doorways carry a sensor
+const wired = new Set();
+DOORWAYS.forEach((d,i) => { if(i % 3 !== 0) wired.add(d.a+"-"+d.b); });
+const isWired = (a,b) => wired.has(a+"-"+b) || wired.has(b+"-"+a);
+
+// role of each cell: codebooks to read, one uplink to transmit from
+const ROLE = CELLS.map((_,i) => i===0 ? "uplink" : (i%3===1 ? "codebook" : "plain"));
+
+function nearestCell(x,z){
+  let best=0, bd=1e9;
+  CC.forEach((c,i)=>{ const d=Math.hypot(x-c.x, z-c.z); if(d<bd){ bd=d; best=i; } });
+  return best;
+}
+function doorBetween(a,b){
+  return DOORWAYS.find(d => (d.a===a&&d.b===b) || (d.a===b&&d.b===a));
+}
+function allowed(x,z){
+  const n = nearestCell(x,z);
+  if(n === curCell) return Math.hypot(x-CC[n].x, z-CC[n].z) < R*0.90;
+  if(!doorsOpen || !hasDoor(curCell,n)) return false;
+  const dw = doorBetween(curCell,n);
+  if(!dw || Math.hypot(x-dw.x, z-dw.z) > DOOR_W*1.15) return false;
+  onEnterCell(curCell, n);
+  curCell = n;
+  return true;
+}
+
+// ---- the antagonist's belief, same filter as sensors.py ----
+let belief = CELLS.map(()=>1/CELLS.length);
+const aiLines = [];
+function aiSay(t){ aiLines.unshift(t); aiLines.length = Math.min(aiLines.length, 4);
+  document.getElementById("ailog3").innerHTML =
+    aiLines.map((l,i)=>`<div style="opacity:${1 - i*0.22}">&rsaquo; ${l}</div>`).join(""); }
+
+function neighboursOf(i){
+  const out=[]; CELLS.forEach((_,j)=>{ if(j!==i && hasDoor(i,j)) out.push(j); }); return out;
+}
+function beliefStep(event){
+  const nb = CELLS.map(()=>0);
+  belief.forEach((w,i)=>{
+    if(w<=0) return;
+    const cands = neighboursOf(i).concat([i]), p = 1/cands.length;
+    cands.forEach(c=>{
+      if(event===null){ if(c!==i && isWired(i,c)) return; }
+      else { if(c===i || !(event[0]===Math.min(i,c) && event[1]===Math.max(i,c))) return; }
+      nb[c] += w*p;
+    });
+  });
+  const z = nb.reduce((a,b)=>a+b, 0);
+  belief = z>0 ? nb.map(v=>v/z) : CELLS.map(()=>1/CELLS.length);
+}
+const beliefMap = () => belief.indexOf(Math.max(...belief));
+const beliefConf = () => Math.max(...belief);
+
+// ---- learned habits: the same variable-order counts, compactly ----
+const cnt = new Map(), tot = new Map();
+let aiTrack = [];
+function learn(room){
+  for(let o=0;o<=3;o++){
+    if(o>aiTrack.length) break;
+    const ctx = aiTrack.slice(aiTrack.length-o).join(">");
+    if(!cnt.has(ctx)) cnt.set(ctx, new Map());
+    const row = cnt.get(ctx);
+    row.set(room, (row.get(room)||0)+1);
+    tot.set(ctx, (tot.get(ctx)||0)+1);
+  }
+  aiTrack.push(room); if(aiTrack.length>6) aiTrack.shift();
+}
+function predictFrom(room){
+  const cands = neighboursOf(room).concat([room]);
+  let d = {}; cands.forEach(c=>d[c]=1/cands.length);
+  for(let o=0;o<=3;o++){
+    if(o>aiTrack.length) break;
+    const ctx = aiTrack.slice(aiTrack.length-o).join(">");
+    const t = tot.get(ctx)||0; if(!t) continue;
+    const row = cnt.get(ctx); if(!row) continue;
+    let seen=0; cands.forEach(c=>seen += (row.get(c)||0));
+    if(!seen) continue;
+    const w = t/(t+1.6), nd={};
+    cands.forEach(c=> nd[c] = w*((row.get(c)||0)/seen) + (1-w)*d[c]);
+    d = nd;
+  }
+  let best=cands[0]; cands.forEach(c=>{ if(d[c]>d[best]) best=c; });
+  return { best, p: d[best] };
+}
+
+let windowStartCell = 0, searchSeen = {};
+function onEnterCell(from, to){
+  if(ROLE[to]==="codebook" && !visited.has(to)){
+    visited.add(to);
+    msg = "Codebook " + GLYPH[to] + " recorded. " + visited.size + " of 3.";
+  }
+  if(ROLE[to]==="uplink" && visited.size>=3){
+    msg = "SIGNAL AWAY. You got it out.";
+    objective = 1;
+  }
+}
+
+function bfsStep(from, to){
+  if(from===to) return from;
+  const prev = new Map([[from,null]]), q=[from];
+  while(q.length){
+    const c=q.shift();
+    if(c===to){ let cur=to; while(prev.get(cur)!==null && prev.get(prev.get(cur))!==null) cur=prev.get(cur); return cur; }
+    neighboursOf(c).forEach(nb=>{ if(!prev.has(nb)){ prev.set(nb,c); q.push(nb); } });
+  }
+  return from;
+}
+
+function resolveWindow(){
+  const moved = windowStartCell !== curCell;
+  const ev = (moved && isWired(windowStartCell, curCell))
+    ? [Math.min(windowStartCell,curCell), Math.max(windowStartCell,curCell)] : null;
+  beliefStep(ev);
+  if(entityCell === curCell) belief = CELLS.map((_,i)=> i===curCell ? 1 : 0);
+
+  const conf = beliefConf(), mp = beliefMap();
+  if(ev) aiSay("A sensor tripped between <b style='color:#ffb545'>" + GLYPH[ev[0]] + "</b> and <b style='color:#ffb545'>" + GLYPH[ev[1]] + "</b>. You are in " + GLYPH[mp] + ".");
+  else if(!moved) aiSay("Nothing tripped. You held position, or used a door I cannot hear. " + Math.round(conf*100) + "% sure.");
+  else aiSay("Nothing tripped, but you moved. An unwired door. Down to " + Math.round(conf*100) + "%.");
+
+  learn(mp);
+  let tgt;
+  if(conf >= 0.4){
+    const pr = predictFrom(mp);
+    tgt = pr.best;
+    aiSay("I expect you " + (pr.best===mp ? "to stay" : "in " + GLYPH[pr.best]) + " (" + Math.round(pr.p*100) + "%). Moving to intercept.");
+  } else {
+    let oldest=0, ot=Infinity;
+    CELLS.forEach((_,i)=>{ const t = searchSeen[i] ?? -1; if(t<ot){ ot=t; oldest=i; } });
+    tgt = oldest;
+    aiSay("Too unsure to commit. Sweeping " + GLYPH[tgt] + ".");
+  }
+  searchSeen[entityCell] = performance.now();
+  entityCell = bfsStep(entityCell, tgt);
+  if(entityCell === curCell){ caught++; msg = "IT FOUND YOU."; }
+}
+
+// ---------------------------------------------------------------- camera
+const cam = { x:0, y:1.62, z:0, yaw:-0.6, pitch:0.02, bob:0 };
+const keys = {};
+addEventListener("keydown", e => { keys[e.code]=true;
+  if(e.code.startsWith("Arrow")) e.preventDefault(); });
+addEventListener("keyup",   e => { keys[e.code]=false; });
+
+// Three ways to look around, because pointer lock is unreliable: Firefox and
+// LibreWolf routinely refuse it on file:// URLs and the rejection is silent.
+// Locked mouse if we can get it, click-drag if we cannot, arrow keys always.
+const startEl = document.getElementById("start");
+const note = document.getElementById("note");
+let locked = false, dragging = false;
+
+function tryLock(){
+  startEl.style.display = "none";           // enter regardless of whether lock works
+  const r = cv.requestPointerLock && cv.requestPointerLock();
+  if(r && typeof r.catch === "function") r.catch(() => { locked = false; showFallback(); });
+  setTimeout(() => { if(document.pointerLockElement !== cv) showFallback(); }, 350);
+}
+function showFallback(){
+  note.textContent = "mouse capture unavailable — DRAG to look, or use ARROW KEYS";
+}
+startEl.addEventListener("click", tryLock);
+cv.addEventListener("click", () => { if(!locked && !dragging) tryLock(); });
+
+document.addEventListener("pointerlockchange", () => {
+  locked = document.pointerLockElement === cv;
+  if(locked) note.textContent = "";
+});
+document.addEventListener("pointerlockerror", showFallback);
+
+cv.addEventListener("mousedown", e => { if(!locked){ dragging = true; e.preventDefault(); } });
+addEventListener("mouseup", () => { dragging = false; });
+cv.addEventListener("mouseleave", () => { dragging = false; });
+cv.addEventListener("contextmenu", e => e.preventDefault());
+
+function look(dx, dy){
+  cam.yaw   -= dx * 0.0022;
+  cam.pitch -= dy * 0.0022;
+  cam.pitch = Math.max(-1.35, Math.min(1.35, cam.pitch));
+}
+addEventListener("mousemove", e => {
+  if(locked) look(e.movementX || 0, e.movementY || 0);
+  else if(dragging) look(e.movementX || 0, e.movementY || 0);
+});
+
+function insideFacility(x, z){
+  // stay within the union of hex cells, with a little clearance for the walls
+  for(const [q,r] of CELLS){
+    const [cx,,cz] = cellCenter(q,r);
+    if(Math.hypot(x-cx, z-cz) < R*0.86) return true;
+  }
+  return false;
+}
+
+let last = performance.now(), t = 0;
+function frame(now){
+  const dt = Math.min((now-last)/1000, 0.05); last = now; t += dt;
+
+  const turn = 1.9 * dt;
+  if(keys.ArrowLeft)  cam.yaw += turn;
+  if(keys.ArrowRight) cam.yaw -= turn;
+  if(keys.ArrowUp)    cam.pitch = Math.min(1.35, cam.pitch + turn*0.7);
+  if(keys.ArrowDown)  cam.pitch = Math.max(-1.35, cam.pitch - turn*0.7);
+
+  const sp = (keys.ShiftLeft||keys.ShiftRight ? 4.4 : 2.3) * dt;
+  const fx = Math.sin(cam.yaw), fz = Math.cos(cam.yaw);
+  let dx=0, dz=0;
+  if(keys.KeyW){ dx -= fx*sp; dz -= fz*sp; }
+  if(keys.KeyS){ dx += fx*sp; dz += fz*sp; }
+  if(keys.KeyA){ dx -= fz*sp; dz += fx*sp; }
+  if(keys.KeyD){ dx += fz*sp; dz -= fx*sp; }
+  if(allowed(cam.x+dx, cam.z))   cam.x += dx;
+  if(allowed(cam.x, cam.z+dz))   cam.z += dz;
+  const moving = Math.abs(dx)+Math.abs(dz) > 0.0005;
+  cam.bob += moving ? dt*9.5 : 0;
+  const bobY = moving ? Math.sin(cam.bob)*0.035 : 0;
+
+  // the facility breathes: sealed, then a short window when every door unlocks
+  if(!objective && !caught){
+    timer -= dt;
+    if(timer <= 0){
+      if(phase === "open"){ resolveWindow(); phase="lock"; timer=LOCKDOWN; doorsOpen=false; }
+      else { phase="open"; timer=WINDOW; doorsOpen=true; windowStartCell=curCell; }
+    }
+  }
+  const tot = phase==="open" ? WINDOW : LOCKDOWN;
+  const ph = document.getElementById("phase3");
+  ph.textContent = caught ? "TAKEN" : objective ? "SIGNAL AWAY" : (phase==="open" ? "DOORS OPEN" : "LOCKDOWN");
+  ph.style.color = caught ? "#ff4d3d" : phase==="open" ? "#5fd39a" : "#8a7f6a";
+  const b3 = document.getElementById("bar3");
+  b3.style.width = Math.max(0, timer/tot*100) + "%";
+  b3.style.background = phase==="open" ? "#5fd39a" : "#ffb545";
+  document.getElementById("obj3").textContent =
+    msg || ("codebooks " + visited.size + "/3" + (visited.size>=3 ? " — get to the uplink" : ""));
+  document.getElementById("conf3").textContent = Math.round(beliefConf()*100) + "%";
+  document.getElementById("map3").textContent =
+    GLYPH[beliefMap()] + (beliefMap()===curCell ? " (right)" : " (wrong)");
+
+  const eye = [cam.x, cam.y + bobY, cam.z];
+  const dir = [ -Math.sin(cam.yaw)*Math.cos(cam.pitch), Math.sin(cam.pitch), -Math.cos(cam.yaw)*Math.cos(cam.pitch) ];
+  const ctr = [eye[0]+dir[0], eye[1]+dir[1], eye[2]+dir[2]];
+  const VP = mul(perspective(1.16, LOW_W/LOW_H, 0.08, 90), lookAt(eye, ctr, [0,1,0]));
+
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+  gl.viewport(0,0,LOW_W,LOW_H);
+  gl.enable(gl.DEPTH_TEST); gl.disable(gl.CULL_FACE);
+  gl.clearColor(0.016,0.015,0.014,1); gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+  gl.useProgram(scene);
+  gl.uniformMatrix4fv(gl.getUniformLocation(scene,"uVP"), false, new Float32Array(VP));
+  gl.uniform3fv(gl.getUniformLocation(scene,"uEye"), new Float32Array(eye));
+  gl.uniform3fv(gl.getUniformLocation(scene,"uDir"), new Float32Array(dir));
+  gl.uniform3f(gl.getUniformLocation(scene,"uOffset"), 0, 0, 0);
+  gl.bindVertexArray(vao);
+  gl.drawArrays(gl.TRIANGLES, 0, VCOUNT);
+
+  const ec = CC[entityCell];
+  gl.uniform3f(gl.getUniformLocation(scene,"uOffset"), ec.x - 1.5, 0, ec.z - 1.2);
+  gl.bindVertexArray(evao);
+  gl.drawArrays(gl.TRIANGLES, 0, ECOUNT);
+
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  const w = cv.clientWidth, h = cv.clientHeight;
+  if(cv.width !== w || cv.height !== h){ cv.width = w; cv.height = h; }
+  gl.viewport(0,0,cv.width,cv.height);
+  gl.disable(gl.DEPTH_TEST); gl.disable(gl.CULL_FACE);
+  gl.useProgram(post);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.uniform1i(gl.getUniformLocation(post,"uTex"), 0);
+  gl.uniform2f(gl.getUniformLocation(post,"uRes"), LOW_W, LOW_H);
+  gl.uniform1f(gl.getUniformLocation(post,"uTime"), t);
+  gl.bindVertexArray(qvao);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+  document.getElementById("loc").textContent =
+    "CELL " + GLYPH[curCell] + "  ·  " + (ROLE[curCell]==="uplink" ? "THE UPLINK"
+      : ROLE[curCell]==="codebook" ? (visited.has(curCell) ? "codebook — recorded" : "CODEBOOK — walk in to record")
+      : "nothing here") + (doorsOpen ? "  ·  doors are open" : "  ·  sealed");
+
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+// ?sim=N advances N windows with the player wandering, for stills and demos
+const _simN = parseInt(new URLSearchParams(location.search).get("sim") || "0", 10);
+if(_simN > 0){
+  let rs = 7;
+  const rr = () => (rs = (rs*1664525 + 1013904223) >>> 0) / 4294967296;
+  for(let i=0; i<_simN && !caught && !objective; i++){
+    windowStartCell = curCell;
+    const opts = neighboursOf(curCell).filter(c => c !== entityCell);
+    if(opts.length && rr() < 0.8){
+      const nxt = opts[Math.floor(rr()*opts.length)];
+      onEnterCell(curCell, nxt); curCell = nxt;
+    }
+    resolveWindow();
+  }
+  cam.x = CC[curCell].x + 2.0; cam.z = CC[curCell].z + 1.6;
+}
+// ?shot=1 drops the overlay for screenshots and stills
+if(new URLSearchParams(location.search).get("shot") === "1"){
+  startEl.style.display = "none";
+  cam.x = CC[curCell].x + 2.0; cam.z = CC[curCell].z + 1.6; cam.yaw = 2.5; cam.pitch = -0.03;
+}
+})();
+</script>

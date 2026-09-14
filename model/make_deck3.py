@@ -153,8 +153,16 @@ tb(s, 1.05, 5.74, 11.3, 1.05,
    "browser with no install. Figures and tables are generated from one metrics file, so nothing here is "
    "typed by hand.", size=14, line=1.35, space=4)
 
+# ---------------------------------------------------------------- first person
+s = slide(); header(s, "The game", "First-person, and the AI is in it")
+picture(s, "fig_3d.png", 2.05, 1.82, 9.2)
+tb(s, 0.72, 6.88, 11.9, 0.5,
+   "Eight cells of the facility in a hand-written WebGL build. Record three codebooks, reach the uplink, and "
+   "survive a thing that hears the doors you use. Here it has just found the player \u2014 and the panel on the "
+   "right shows exactly how.", size=12, color=MUT, line=1.28)
+
 # ---------------------------------------------------------------- the game
-s = slide(); header(s, "The game is the implementation", "One build. The AI is inside it, and it explains itself.")
+s = slide(); header(s, "The same AI, in plain view", "The systems view: belief, sensors, and its reasoning")
 picture(s, "fig_game.png", 2.05, 1.82, 9.2)
 tb(s, 0.72, 6.88, 11.9, 0.5,
    "Live capture after 22 windows. The AI has ringed room A — 'IT THINKS YOU ARE HERE' — while the player "
@@ -197,7 +205,8 @@ table(s, [
     ["Notebook", "Freehand editor, strokes, undo, pages", "In game", "parity-game.html"],
     ["Cipher", "Codebooks, register, transmit validation", "In game", "parity-game.html"],
     ["Door clock", "Lockdown / window cycle, the whole rhythm", "In game", "parity-game.html"],
-    ["3D presentation", "Godot first-person build", "Not started", "art study only"],
+    ["First-person build", "Walkable facility, clock, entity, AI narration", "Playable", "parity-3d.html"],
+    ["Godot port", "Engine build, lighting, animation", "Not started", "\u2014"],
     ["Audio, content, progression", "Atmosphere, multiple floors, persistence", "Not started", "\u2014"],
 ], col_w=[2.3, 4.4, 1.6, 3.6], size=10, head_size=8.5)
 tb(s, 0.72, 6.92, 11.9, 0.5,
@@ -402,10 +411,10 @@ tb(s, 0.72, 5.3, 11.9, 1.2,
 s = slide(); header(s, "Demonstration", "Four things that run right now")
 table(s, [
     ["#", "What", "What the panel sees"],
-    ["1", "THE GAME — parity-game.html", "Play it. AI view on: belief on the map, doors it can and cannot hear, and its reasoning in English every turn"],
-    ["2", "Cut a sensor", "Three windows stood still to kill a door, then watch the AI lose track of you"],
+    ["1", "THE GAME — parity-3d.html", "Walk it in first person. Three codebooks, then the uplink, with the thing hunting you and narrating itself top-right"],
+    ["2", "Systems view — parity-game.html", "The same AI with its belief drawn on the map, and a sensor you can cut"],
     ["3", "Test suite — test_invariants.py", "9 invariants over 25 generated facilities, in seconds"],
-    ["4", "Room study — parity-room.html", "Walkable art direction for the 3D layer that is still to come"],
+    ["4", "Cut a sensor", "Three windows stood still to kill a door, then watch it lose your trail"],
 ], col_w=[0.6, 3.6, 7.7], size=11.5, head_size=9)
 tb(s, 0.72, 5.0, 11.9, 0.9,
    "Everything runs offline in a browser or from the command line — nothing to install, no network. Turn AI "
@@ -437,46 +446,48 @@ NOTES = {
  2: "Thirty seconds of context, then say the sentence that matters: everything in this deck is executable "
     "and the panel can run it. Name the new work: partial observation, built because the last review's "
     "negative result pointed at it.",
- 3: "Open the build and leave it running while you talk. Point at the ring on the map and say it out loud: "
+ 3: "Lead with this. Walk two rooms, let a window open and close, and let them read the panel top-right "
+    "while you move. It answers 'where is the game' and 'show the AI functioning' in one go.",
+ 5: "Open the build and leave it running while you talk. Point at the ring on the map and say it out loud: "
     "it is confidently wrong, because the player has been using doors it cannot hear. That single image "
     "answers 'show us the AI functioning'.",
- 4: "Read two of these lines aloud verbatim. This is the answer to 'explain the AI in plain view' — it is "
+ 5: "Read two of these lines aloud verbatim. This is the answer to 'explain the AI in plain view' — it is "
     "not a diagram of the AI, it is the AI talking. Then say the last line is what the player NEVER sees: "
     "the tampering is silent in normal play, and the AI view is how you inspect it.",
- 5: "THE implementation slide. Walk the Status column, not the whole table. Eight of ten modules complete "
+ 6: "THE implementation slide. Walk the Status column, not the whole table. Eight of ten modules complete "
     "and measured, two running as prototypes, and be straight that the 3D integration has not started. "
     "Say 'roughly 80% of the approved module list' — do not overclaim a finished game.",
- 6: "Offer to run something. 'python3 model/test_invariants.py takes about five seconds' is a strong line. "
+ 7: "Offer to run something. 'python3 model/test_invariants.py takes about five seconds' is a strong line. "
     "Attribution is the git history: 12 commits, single author.",
- 7: "Two decisions to defend: Sabotage is the only mutator so every change is logged and replayable; the "
+ 8: "Two decisions to defend: Sabotage is the only mutator so every change is logged and replayable; the "
     "Notebook sits outside the loop, which is what makes it the player's counter-move.",
- 8: "This is the progress slide. Lead with the negative result from last time, then what you built because "
+ 9: "This is the progress slide. Lead with the negative result from last time, then what you built because "
     "of it. Panels reward work that follows from evidence rather than from a plan.",
- 9: "Explain the order-1 failure concretely: a route means the same room has different successors depending "
+ 10: "Explain the order-1 failure concretely: a route means the same room has different successors depending "
     "on how you entered it. Then say staying is a legal action, which is why accuracy is 61% and not 90% — "
     "an earlier version forbade waiting and that number was inflated.",
- 10: "The new method. Predict, then rule out whatever the evidence contradicts. The detail that impresses: "
+ 11: "The new method. Predict, then rule out whatever the evidence contradicts. The detail that impresses: "
     "if every door is wired, SILENCE is evidence — it proves they stayed — so full coverage is still perfect "
     "tracking. Partial observation only exists because coverage is incomplete.",
- 11: "The rigour slide. The control is the strongest thing in the project. Also mention that two findings "
+ 12: "The rigour slide. The control is the strongest thing in the project. Also mention that two findings "
     "this cycle came from catching a bad metric.",
- 12: "Lead with the control column, not the 61%.",
- 13: "Lead with the 100% bar — it never linger where there is nothing to record. The 67% bar is the honest "
+ 13: "Lead with the control column, not the 61%.",
+ 14: "Lead with the 100% bar — it never linger where there is nothing to record. The 67% bar is the honest "
      "one: it knows you may be writing, not when you will finish.",
- 14: "The answer to 'hub-camping is nearly as good'. Only on a small map.",
- 15: "Note the entity is removed here, isolating world editing from hunting.",
- 16: "First new result. The counter-intuitive bit is that full coverage gives perfect tracking, because "
+ 15: "The answer to 'hub-camping is nearly as good'. Only on a small map.",
+ 16: "Note the entity is removed here, isolating world editing from hunting.",
+ 17: "First new result. The counter-intuitive bit is that full coverage gives perfect tracking, because "
      "silence is informative. That is why the fiction needs unwired doors and disabled sensors.",
- 17: "The headline. Three things: waiting is worse than useless, avoidance barely helps, and disabling "
+ 18: "The headline. Three things: waiting is worse than useless, avoidance barely helps, and disabling "
      "sensors on your own route is the real counter-play. Point out this is your design mechanic validated "
      "by measurement, not chosen after the fact.",
- 18: "Do not read this. It is here so the panel can see the shape of the work and pick something to ask "
+ 19: "Do not read this. It is here so the panel can see the shape of the work and pick something to ask "
      "about. Note the two rows marked NEGATIVE — volunteer them.",
- 19: "If you only defend one slide, defend this one. It shows evidence driving decisions, a corrected metric "
+ 20: "If you only defend one slide, defend this one. It shows evidence driving decisions, a corrected metric "
      "overturning two apparent wins, and the design being validated rather than rationalised.",
- 20: "Say these before they are asked. The 3D build not being started is the obvious one — own it and point "
+ 21: "Say these before they are asked. The 3D build not being started is the obvious one — own it and point "
      "at the roadmap and at why M6 came first.",
- 21: "Run item 1 and item 3 if there is time. Item 3 takes seconds and answers any rigour question.",
+ 22: "Run item 1 and item 3 if there is time. Item 3 takes seconds and answers any rigour question.",
 }
 for idx, sl in enumerate(prs.slides, start=1):
     if idx in NOTES:
