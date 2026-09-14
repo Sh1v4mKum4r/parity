@@ -128,28 +128,65 @@ tb(s, 0.95, 4.52, 11.0, 1.2,
 
 # ---------------------------------------------------------------- 2 recap
 s = slide(); header(s, "Where this stands", "One minute of context, then evidence")
-bullets(s, [
-    ("The problem —", "horror antagonists are static (learnable, stop being frightening) or random "
-     "(unlearnable, feel unfair). Neither adapts to the individual player."),
-    ("The approach —", "an antagonist that builds an ONLINE behavioural model of this player and acts "
-     "on it: intercepting where they are going, and degrading the information they depend on."),
-    ("Since the last review —", "implemented partial observation: the antagonist now senses the player "
-     "through door motion-detectors and maintains a belief, rather than knowing their position. "
-     "Two new experiments follow from it."),
-], size=15)
-box = s.shapes.add_shape(1, In(0.72), In(5.0), In(11.9), In(1.5))
+tb(s, 0.72, 1.92, 11.9, 0.34, "WHAT THIS PANEL ASKED FOR LAST TIME", size=10.5, bold=True, color=ORG)
+table(s, [
+    ["You said", "What changed"],
+    ["Show the AI functioning, not just described",
+     "The game now narrates its own reasoning on screen, in English, every turn"],
+    ["The game should BE the implementation",
+     "The four separate prototypes are merged into one playable build"],
+    ["Get to about half the game",
+     "The complete core loop runs; the 3D presentation layer is what remains"],
+    ["Explain the AI in plain view",
+     "An AI view shows its belief on the map and why it moves where it moves"],
+], y=2.28, col_w=[4.6, 7.3], size=12.5, head_size=9)
+tb(s, 0.72, 4.5, 11.9, 0.9,
+   "The problem it solves — horror antagonists are static (learnable, stop being frightening) or random "
+   "(unlearnable, feel unfair). Neither adapts to the individual. PARITY builds an online behavioural model "
+   "of this player and acts on it.", size=13.5, color=MUT, line=1.3)
+box = s.shapes.add_shape(1, In(0.72), In(5.5), In(11.9), In(1.4))
 box.fill.solid(); box.fill.fore_color.rgb = C(0xf1,0xf6,0xfc); box.line.color.rgb = ACC
 box.line.width = Pt(1); box.shadow.inherit = False
-tb(s, 1.05, 5.26, 11.3, 1.1,
+tb(s, 1.05, 5.74, 11.3, 1.05,
    "Everything in this deck is executable.\n"
    "12 experiments and 9 invariant tests run from the command line in minutes; four prototypes run in a "
    "browser with no install. Figures and tables are generated from one metrics file, so nothing here is "
    "typed by hand.", size=14, line=1.35, space=4)
 
-# ---------------------------------------------------------------- 3 scope
-s = slide(); header(s, "Implementation", "Approved scope, and what of it runs today")
+# ---------------------------------------------------------------- the game
+s = slide(); header(s, "The game is the implementation", "One build. The AI is inside it, and it explains itself.")
+picture(s, "fig_game.png", 2.05, 1.82, 9.2)
+tb(s, 0.72, 6.88, 11.9, 0.5,
+   "Live capture after 22 windows. The AI has ringed room A — 'IT THINKS YOU ARE HERE' — while the player "
+   "stands in H. It is confidently wrong, because the player has been using doors with no sensor on them.",
+   size=12, color=MUT, line=1.28)
+
+# ---------------------------------------------------------------- AI in plain view
+s = slide(); header(s, "The AI in plain view", "It narrates every decision, in English")
+tb(s, 0.72, 1.9, 11.9, 0.32, "VERBATIM FROM THE RUNNING BUILD", size=10.5, bold=True, color=ACC)
+box = s.shapes.add_shape(1, In(0.72), In(2.26), In(11.9), In(2.5))
+box.fill.solid(); box.fill.fore_color.rgb = C(0x16,0x18,0x1a); box.line.fill.background(); box.shadow.inherit = False
+tb(s, 1.05, 2.46, 11.3, 2.1,
+   "\u203a  A sensor tripped on the door between B and C. You are in B.\n"
+   "\u203a  From there I expect you to stay put (51%). Moving to intercept.\n"
+   "\u203a  Nothing tripped, but I do not think you stayed. You must have used an unwired\n"
+   "    door. Down to 25% sure.\n"
+   "\u203a  Only 25% sure \u2014 not enough to commit. Sweeping A, which I have not checked in a while.\n"
+   "\u203a  You cannot see the register right now, so I turned over cell 4. I will not be telling you.",
+   size=12.5, color=C(0xe8,0xdc,0xc4), font="Consolas", line=1.5, space=2)
 table(s, [
-    ["Module (approved design)", "Responsibility", "Status", "Evidence"],
+    ["On screen", "What it exposes"],
+    ["Belief heat on every room", "Where it thinks you are, and how wrong that is"],
+    ["Dashed vs solid doors", "Which doors can hear you"],
+    ["'Strongest rule learned'", "The habit it has picked up, in counts: 'after A\u2192A you go to A, 10 of 10'"],
+    ["Confidence percentage", "Why it commits to an intercept, or sweeps instead"],
+], y=5.0, col_w=[3.5, 8.4], size=12, head_size=9)
+
+
+# ---------------------------------------------------------------- 3 scope
+s = slide(); header(s, "Implementation", "How much of the game is built")
+table(s, [
+    ["System (approved design)", "Responsibility", "Status", "Where it runs"],
     ["Facility", "Room graph, mutation, connectivity invariants", "Complete", "facility.py · 4 tests"],
     ["Predictor", "Variable-order Markov model, online, persists", "Complete", "predictors.py · E1-E3"],
     ["Director", "Scores and selects counter-moves, gated", "Complete", "director.py · E4-E7"],
@@ -157,15 +194,16 @@ table(s, [
     ["Telemetry", "Routes, dwell, edge traversals", "Complete", "director.py · E10"],
     ["Entity", "Perception, pursuit, interception", "Complete", "director.py · E4"],
     ["Sensors + belief", "Partial observation (NEW this cycle)", "Complete", "sensors.py · E11-E12"],
-    ["Notebook", "Freehand editor, strokes, undo, pages", "Prototype", "parity-notebook.html"],
-    ["Cipher", "Codebooks, register, transmit validation", "Prototype", "parity-slice.html"],
-    ["3D integration", "Godot first-person build", "Not started", "art study only"],
-], col_w=[2.3, 4.4, 1.6, 3.6], size=10.5, head_size=8.5)
-tb(s, 0.72, 6.62, 11.9, 0.7,
-   "Eight of ten modules are complete and measured; two more exist as running prototypes. The remaining "
-   "work is the 3D integration layer — presentation, not mechanism. Against the approved module list "
-   "that is roughly 80% implemented.", size=12, color=MUT, line=1.28)
-
+    ["Notebook", "Freehand editor, strokes, undo, pages", "In game", "parity-game.html"],
+    ["Cipher", "Codebooks, register, transmit validation", "In game", "parity-game.html"],
+    ["Door clock", "Lockdown / window cycle, the whole rhythm", "In game", "parity-game.html"],
+    ["3D presentation", "Godot first-person build", "Not started", "art study only"],
+    ["Audio, content, progression", "Atmosphere, multiple floors, persistence", "Not started", "\u2014"],
+], col_w=[2.3, 4.4, 1.6, 3.6], size=10, head_size=8.5)
+tb(s, 0.72, 6.92, 11.9, 0.5,
+   "The whole core loop is playable: move on the clock, read codebooks, write pages, stage and send a byte, "
+   "evade an AI that models you. What remains is presentation and content, not mechanism — roughly half "
+   "the game.", size=11.5, color=MUT, line=1.25)
 # ---------------------------------------------------------------- 4 evidence
 s = slide(); header(s, "Implementation", "Executable, and attributable")
 table(s, [
@@ -364,14 +402,15 @@ tb(s, 0.72, 5.3, 11.9, 1.2,
 s = slide(); header(s, "Demonstration", "Four things that run right now")
 table(s, [
     ["#", "What", "What the panel sees"],
-    ["1", "Model monitor — parity-demo.html", "Live belief, running accuracy against a no-model control, and the learned rule in plain English"],
-    ["2", "Vertical slice — parity-slice.html", "The loop: door clock, notebook competing with your escape window, and a staged byte the AI flips"],
-    ["3", "Test suite — test_invariants.py", "9 invariants over 25 facilities, in seconds"],
-    ["4", "Room study — parity-room.html", "Walkable art direction for the 3D build"],
-], col_w=[0.6, 3.6, 7.7], size=12, head_size=9)
+    ["1", "THE GAME — parity-game.html", "Play it. AI view on: belief on the map, doors it can and cannot hear, and its reasoning in English every turn"],
+    ["2", "Cut a sensor", "Three windows stood still to kill a door, then watch the AI lose track of you"],
+    ["3", "Test suite — test_invariants.py", "9 invariants over 25 generated facilities, in seconds"],
+    ["4", "Room study — parity-room.html", "Walkable art direction for the 3D layer that is still to come"],
+], col_w=[0.6, 3.6, 7.7], size=11.5, head_size=9)
 tb(s, 0.72, 5.0, 11.9, 0.9,
-   "All four run offline in a browser or from the command line. Nothing needs installing, and nothing needs "
-   "a network.", size=13, color=MUT, line=1.3)
+   "Everything runs offline in a browser or from the command line — nothing to install, no network. Turn AI "
+   "view OFF to see what the player experiences, then ON to see what the antagonist was actually doing. "
+   "That contrast is the demonstration.", size=13, color=MUT, line=1.3)
 
 # ---------------------------------------------------------------- backup
 s = slide(); header(s, "Backup", "Learning speed")
@@ -398,40 +437,46 @@ NOTES = {
  2: "Thirty seconds of context, then say the sentence that matters: everything in this deck is executable "
     "and the panel can run it. Name the new work: partial observation, built because the last review's "
     "negative result pointed at it.",
- 3: "THE implementation slide. Walk the Status column, not the whole table. Eight of ten modules complete "
+ 3: "Open the build and leave it running while you talk. Point at the ring on the map and say it out loud: "
+    "it is confidently wrong, because the player has been using doors it cannot hear. That single image "
+    "answers 'show us the AI functioning'.",
+ 4: "Read two of these lines aloud verbatim. This is the answer to 'explain the AI in plain view' — it is "
+    "not a diagram of the AI, it is the AI talking. Then say the last line is what the player NEVER sees: "
+    "the tampering is silent in normal play, and the AI view is how you inspect it.",
+ 5: "THE implementation slide. Walk the Status column, not the whole table. Eight of ten modules complete "
     "and measured, two running as prototypes, and be straight that the 3D integration has not started. "
     "Say 'roughly 80% of the approved module list' — do not overclaim a finished game.",
- 4: "Offer to run something. 'python3 model/test_invariants.py takes about five seconds' is a strong line. "
+ 6: "Offer to run something. 'python3 model/test_invariants.py takes about five seconds' is a strong line. "
     "Attribution is the git history: 12 commits, single author.",
- 5: "Two decisions to defend: Sabotage is the only mutator so every change is logged and replayable; the "
+ 7: "Two decisions to defend: Sabotage is the only mutator so every change is logged and replayable; the "
     "Notebook sits outside the loop, which is what makes it the player's counter-move.",
- 6: "This is the progress slide. Lead with the negative result from last time, then what you built because "
+ 8: "This is the progress slide. Lead with the negative result from last time, then what you built because "
     "of it. Panels reward work that follows from evidence rather than from a plan.",
- 7: "Explain the order-1 failure concretely: a route means the same room has different successors depending "
+ 9: "Explain the order-1 failure concretely: a route means the same room has different successors depending "
     "on how you entered it. Then say staying is a legal action, which is why accuracy is 61% and not 90% — "
     "an earlier version forbade waiting and that number was inflated.",
- 8: "The new method. Predict, then rule out whatever the evidence contradicts. The detail that impresses: "
+ 10: "The new method. Predict, then rule out whatever the evidence contradicts. The detail that impresses: "
     "if every door is wired, SILENCE is evidence — it proves they stayed — so full coverage is still perfect "
     "tracking. Partial observation only exists because coverage is incomplete.",
- 9: "The rigour slide. The control is the strongest thing in the project. Also mention that two findings "
+ 11: "The rigour slide. The control is the strongest thing in the project. Also mention that two findings "
     "this cycle came from catching a bad metric.",
- 10: "Lead with the control column, not the 61%.",
- 11: "Lead with the 100% bar — it never linger where there is nothing to record. The 67% bar is the honest "
+ 12: "Lead with the control column, not the 61%.",
+ 13: "Lead with the 100% bar — it never linger where there is nothing to record. The 67% bar is the honest "
      "one: it knows you may be writing, not when you will finish.",
- 12: "The answer to 'hub-camping is nearly as good'. Only on a small map.",
- 13: "Note the entity is removed here, isolating world editing from hunting.",
- 14: "First new result. The counter-intuitive bit is that full coverage gives perfect tracking, because "
+ 14: "The answer to 'hub-camping is nearly as good'. Only on a small map.",
+ 15: "Note the entity is removed here, isolating world editing from hunting.",
+ 16: "First new result. The counter-intuitive bit is that full coverage gives perfect tracking, because "
      "silence is informative. That is why the fiction needs unwired doors and disabled sensors.",
- 15: "The headline. Three things: waiting is worse than useless, avoidance barely helps, and disabling "
+ 17: "The headline. Three things: waiting is worse than useless, avoidance barely helps, and disabling "
      "sensors on your own route is the real counter-play. Point out this is your design mechanic validated "
      "by measurement, not chosen after the fact.",
- 16: "Do not read this. It is here so the panel can see the shape of the work and pick something to ask "
+ 18: "Do not read this. It is here so the panel can see the shape of the work and pick something to ask "
      "about. Note the two rows marked NEGATIVE — volunteer them.",
- 17: "If you only defend one slide, defend this one. It shows evidence driving decisions, a corrected metric "
+ 19: "If you only defend one slide, defend this one. It shows evidence driving decisions, a corrected metric "
      "overturning two apparent wins, and the design being validated rather than rationalised.",
- 18: "Say these before they are asked. The 3D build not being started is the obvious one — own it and point "
+ 20: "Say these before they are asked. The 3D build not being started is the obvious one — own it and point "
      "at the roadmap and at why M6 came first.",
- 19: "Run item 1 and item 3 if there is time. Item 3 takes seconds and answers any rigour question.",
+ 21: "Run item 1 and item 3 if there is time. Item 3 takes seconds and answers any rigour question.",
 }
 for idx, sl in enumerate(prs.slides, start=1):
     if idx in NOTES:
