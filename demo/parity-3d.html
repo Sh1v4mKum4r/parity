@@ -59,7 +59,9 @@
 (() => {
 "use strict";
 const cv = document.getElementById("cv");
-const gl = cv.getContext("webgl2", {antialias:false, alpha:false});
+const gl = cv.getContext("webgl2", {antialias:false, alpha:false,
+  // screenshot tools capture after the buffer is cleared unless this is set
+  preserveDrawingBuffer: new URLSearchParams(location.search).has("preserve")});
 if(!gl){ document.body.innerHTML = "<p style='padding:40px;font-family:monospace'>WebGL2 unavailable.</p>"; return; }
 
 // ---------------------------------------------------------------- math
@@ -484,6 +486,29 @@ function resolveWindow(){
   }
 }
 
+// ?diag=1 dumps GL state into the DOM so a headless browser can report it
+let DIAG = "", FRAMES = 0;
+if(new URLSearchParams(location.search).get("diag") === "1"){
+  const lines = [];
+  lines.push("VERSION: " + gl.getParameter(gl.VERSION));
+  lines.push("GLSL:    " + gl.getParameter(gl.SHADING_LANGUAGE_VERSION));
+  lines.push("VENDOR:  " + gl.getParameter(gl.VENDOR));
+  lines.push("RENDER:  " + gl.getParameter(gl.RENDERER));
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+  const st = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
+  const names = {36053:"COMPLETE",36054:"INCOMPLETE_ATTACHMENT",36055:"MISSING_ATTACHMENT",
+                 36057:"INCOMPLETE_DIMENSIONS",36061:"UNSUPPORTED",36182:"INCOMPLETE_MULTISAMPLE"};
+  lines.push("FBO:     " + (names[st] || st));
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  lines.push("VCOUNT:  " + VCOUNT + "  ECOUNT: " + ECOUNT);
+  lines.push("GLERR:   " + gl.getError());
+  DIAG = lines.join("\n");
+  const el = document.createElement("pre");
+  el.id = "gldiag"; el.textContent = DIAG;
+  el.style.cssText = "position:fixed;left:8px;bottom:8px;z-index:99;color:#5fd39a;font-size:11px";
+  document.body.appendChild(el);
+}
+
 // ---------------------------------------------------------------- camera
 const cam = { x:0, y:1.62, z:0, yaw:-0.6, pitch:0.02, bob:0 };
 const keys = {};
@@ -598,8 +623,12 @@ function frame(now){
   const ctr = [eye[0]+dir[0], eye[1]+dir[1], eye[2]+dir[2]];
   const VP = mul(perspective(1.16, LOW_W/LOW_H, 0.08, 90), lookAt(eye, ctr, [0,1,0]));
 
-  gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
-  gl.viewport(0,0,LOW_W,LOW_H);
+  const NOPOST = new URLSearchParams(location.search).has("nopost");
+  gl.bindFramebuffer(gl.FRAMEBUFFER, NOPOST ? null : fbo);
+  if(NOPOST){ const w0=Math.max(1,cv.clientWidth), h0=Math.max(1,cv.clientHeight);
+    if(cv.width!==w0||cv.height!==h0){ cv.width=w0; cv.height=h0; }
+    gl.viewport(0,0,cv.width,cv.height); }
+  else gl.viewport(0,0,LOW_W,LOW_H);
   gl.enable(gl.DEPTH_TEST); gl.disable(gl.CULL_FACE);
   gl.clearColor(0.016,0.015,0.014,1); gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
   gl.useProgram(scene);
@@ -615,8 +644,12 @@ function frame(now){
   gl.bindVertexArray(evao);
   gl.drawArrays(gl.TRIANGLES, 0, ECOUNT);
 
+  if(NOPOST){ const dg0 = document.getElementById("gldiag");
+    if(dg0){ FRAMES++; dg0.textContent = DIAG + "\nFRAMES:  " + FRAMES + "  (post bypassed)"; }
+    requestAnimationFrame(frame); return; }
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-  const w = cv.clientWidth, h = cv.clientHeight;
+  const w = Math.max(1, cv.clientWidth || window.innerWidth);
+  const h = Math.max(1, cv.clientHeight || window.innerHeight);
   if(cv.width !== w || cv.height !== h){ cv.width = w; cv.height = h; }
   gl.viewport(0,0,cv.width,cv.height);
   gl.disable(gl.DEPTH_TEST); gl.disable(gl.CULL_FACE);
@@ -633,9 +666,17 @@ function frame(now){
       : ROLE[curCell]==="codebook" ? (visited.has(curCell) ? "codebook — recorded" : "CODEBOOK — walk in to record")
       : "nothing here") + (doorsOpen ? "  ·  doors are open" : "  ·  sealed");
 
+  const dg = document.getElementById("gldiag");
+  if(dg){ FRAMES++; dg.textContent = DIAG + "\nFRAMES:  " + FRAMES +
+          "\nCANVAS:  " + cv.width + "x" + cv.height + " (client " + cv.clientWidth + "x" + cv.clientHeight + ")"; }
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
+
+// ?warm=N draws N frames synchronously before the first paint. Headless Firefox
+// screenshots after a single frame, which is not enough for a software renderer.
+const _warm = parseInt(new URLSearchParams(location.search).get("warm") || "0", 10);
+for(let i = 0; i < _warm; i++) frame(performance.now() + i * 16);
 
 // ?autoplay=N runs N frames of REAL play: the same key handling, the same
 // collision, the same clock. Results land in #testout for a headless read.
