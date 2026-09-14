@@ -445,26 +445,26 @@ def e9_dwell_aware(steps=1500, dwell_max=3):
 
 
 def e10_dwell_learned(steps=1500, dwell_max=3):
-    """Is the time a player spends in their notebook learnable -- and is it learned?
+    """Can the model tell WHEN the player will stop to write?
 
-    Dwell is not a nuisance parameter to be assumed; it is one of the most
-    individual things a player does. This measures it directly as a binary task:
-    at each window, will this player decline to move? The baseline is the majority
-    class ("they always move"), which is what you get from knowing nothing about
-    the person.
+    Dwell is now a rare event -- a realistic player records a codebook once, so
+    they decline about 4% of windows. Accuracy is useless at that imbalance: a
+    predictor that simply says "they always move" scores 96% and has learned
+    nothing. The honest measure is recall on the rare class: of the windows the
+    player actually declined, how many did the model call?
 
-    The breakdown by room type is the interesting part: a room with nothing to
-    record should be trivially predictable, and a room with a codebook in it
-    should not be.
+    The majority-class baseline has recall 0 by construction. Anything above that
+    is signal.
     """
     out = {"dwell_max": dwell_max}
-    v, b, t, pl, rate = [], [], [], [], []
+    rec, prec, rate, rec_task = [], [], [], []
     for seed in range(SEEDS):
         fac = Facility(10, seed=seed)
         bot = BOTS["habitual"](fac, seed=seed + 100, dwell_max=dwell_max)
         m = VOMM()
         hist = [bot.pos]
-        hv = hb = n = tv = tn = pv = pn = st = 0
+        tp = fn = fp = stays = n = 0
+        tp_t = fn_t = 0
         for _ in range(steps):
             cur = hist[-1]
             cands = opts(fac, cur)
@@ -472,28 +472,25 @@ def e10_dwell_learned(steps=1500, dwell_max=3):
             pred_stay = d.get(cur, 0.0) > 0.5
             actual = bot.step(); bot.resync(actual)
             stayed = (actual == cur)
-            n += 1; st += stayed
-            hv += (pred_stay == stayed)
-            hb += (not stayed)                      # majority class: always move
+            n += 1; stays += stayed
             room = fac.rooms[cur]
-            if room.has_table or room.has_terminal or room.is_comms:
-                tn += 1; tv += (pred_stay == stayed)
-            else:
-                pn += 1; pv += (pred_stay == stayed)
+            task = room.has_table or room.has_terminal or room.is_comms
+            if stayed and pred_stay: tp += 1; tp_t += task
+            elif stayed and not pred_stay: fn += 1; fn_t += task
+            elif not stayed and pred_stay: fp += 1
             m.observe(hist[-CTX:], actual); hist.append(actual)
-        v.append(hv / n); b.append(hb / n)
-        t.append(tv / max(tn, 1)); pl.append(pv / max(pn, 1))
-        rate.append(st / n)
+        rec.append(tp / max(tp + fn, 1))
+        prec.append(tp / max(tp + fp, 1))
+        rec_task.append(tp_t / max(tp_t + fn_t, 1))
+        rate.append(stays / n)
     out.update({
-        "actual_dwell_rate": statistics.mean(rate),
-        "baseline_accuracy": statistics.mean(b),
-        "vomm_accuracy": statistics.mean(v),
-        "vomm_task_rooms": statistics.mean(t),
-        "vomm_plain_rooms": statistics.mean(pl),
+        "dwell_rate": statistics.mean(rate),
+        "baseline_recall": 0.0,
+        "vomm_recall": statistics.mean(rec),
+        "vomm_precision": statistics.mean(prec),
+        "vomm_recall_task_rooms": statistics.mean(rec_task),
     })
-    out["lift_points"] = 100.0 * (out["vomm_accuracy"] - out["baseline_accuracy"])
     return out
-
 
 
 def e11_localisation(coverages=(1.0, 0.8, 0.6, 0.4, 0.2), steps=1200):

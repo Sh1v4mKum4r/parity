@@ -106,6 +106,7 @@ def rubric_chip(s, text):
 E1, E4, E5 = M["e1_accuracy"], M["e4_pursuit"], M["e5_disruption"]
 E7, E10 = M["e7_scaling"], M["e10_dwell_learned"]
 E11, E12 = M["e11_localisation"], M["e12_counterplay"]
+E10 = M["e10_dwell_learned"]
 SIZES = sorted(int(k) for k in E7)
 COVS = sorted(E12, key=float, reverse=True)
 pc = lambda k: f"{E1[k]['top1']*100:.1f}%"
@@ -328,13 +329,15 @@ tb(s, 0.72, 6.6, 11.9, 0.6,
    "baseline — identical. The gains on structured players are learned habit, not leakage.",
    size=13, color=MUT, line=1.3)
 
-s = slide(); header(s, "Results", "It learned where you stop to write")
+s = slide(); header(s, "Results", "Knowing when you stop to write is still open")
 picture(s, "fig_dwell.png", 2.5, 1.82, 8.4)
 tb(s, 0.72, 6.35, 11.9, 0.9,
-   f"Dwell is behaviour, not a parameter. Predicting 'will they decline this window?' scores "
-   f"{E10['vomm_accuracy']*100:.0f}% against a {E10['baseline_accuracy']*100:.0f}% majority-class baseline — "
-   f"{E10['vomm_plain_rooms']*100:.0f}% in rooms with nothing to record, {E10['vomm_task_rooms']*100:.0f}% where a "
-   "codebook is. The uncertainty sits exactly where the real variation is.", size=12.5, color=MUT, line=1.3)
+   f"Once the player writes realistically — a codebook copied once, not re-copied every pass — dwell becomes "
+   f"rare ({E10['dwell_rate']*100:.0f}% of windows) and accuracy stops meaning anything: 'they always move' scores 96% "
+   f"while learning nothing. On recall, the honest measure, the model catches {E10['vomm_recall']*100:.0f}% of the "
+   f"moments you stop, at {E10['vomm_precision']*100:.0f}% precision, against a baseline that catches none. Four "
+   "attempts to improve it — including a first-visit feature — all made it worse. This is the open problem.",
+   size=11.5, color=MUT, line=1.28)
 
 s = slide(); header(s, "Results", "The advantage grows with the facility")
 picture(s, "fig_scaling.png", 2.5, 1.85, 8.4)
@@ -381,7 +384,7 @@ table(s, [
     ["E6", "Is sabotage aimed?", "No gain on uniform reliance; 13% on uneven", "Conditional"],
     ["E8", "Does waiting defend? (full obs.)", "1.7% risk cut", "NEGATIVE"],
     ["E9", "Does explicit dwell modelling help?", "2.0% worse than position-only", "NEGATIVE"],
-    ["E10", "Is dwell learnable?", f"{E10['vomm_accuracy']*100:.0f}% vs {E10['baseline_accuracy']*100:.0f}% baseline", "Yes"],
+    ["E10", "Can it tell WHEN you stop to write?", f"recall {E10['vomm_recall']*100:.0f}% vs 0% baseline", "OPEN"],
     ["E11", "What do sensors buy? (NEW)", "Full coverage = perfect tracking", "Mechanism"],
     ["E12", "What is the counter-play? (NEW)", f"Disabling sensors: {abs(chg(COVS[1],'disable_3')):.0f}% risk cut", "Design answer"],
 ], col_w=[0.6, 4.2, 4.5, 2.6], size=10.5, head_size=8.5)
@@ -393,14 +396,14 @@ bullets(s, [
      "Waiting did not defend, and the cause was perfect observation. That diagnosis — not a guess — is why "
      "door sensors were the next milestone. The fix was verified: at 100% coverage the new filter reproduces "
      "the old fully-observed behaviour, which is how we know the re-implementation is sound."),
-    ("2 · The metric was hiding the answer.",
-     "Measured per window, avoiding sensors looked excellent. Measured per objective completed, it was worse "
-     "than doing nothing — the player was simply achieving less. Two strategies that looked like wins "
-     "disappeared under the corrected metric."),
-    ("3 · The mechanic the fiction already had is the one that works.",
-     "Detouring around live sensors costs more exposure than it saves. Spending a dangerous task to silence "
-     "a sensor on your existing route is the strategy that cuts risk. The design was right before the "
-     "measurement was."),
+    ("2 · The metric was hiding the answer, twice.",
+     "Measured per window, avoiding sensors looked excellent — measured per objective completed it was worse "
+     "than doing nothing, because the player was simply achieving less. And once the player wrote realistically, "
+     "dwell became rare enough that accuracy was meaningless: 'they always move' scores 96% and learns nothing."),
+    ("3 · The player model was the bottleneck, not the AI.",
+     "The bot re-copied codebooks it already held. Fixing that one unrealistic behaviour moved accuracy from "
+     "60% to 89%, within three points of the measured ceiling. Against a perfectly consistent player the model "
+     "reaches 100%, so the remaining gap is the player's own deviation, not the algorithm."),
 ], size=13.5, gap=13)
 
 # ---------------------------------------------------------------- 18 limitations
@@ -408,10 +411,10 @@ s = slide(); header(s, "Limitations", "Stated before the panel finds them")
 table(s, [
     ["Limitation", "Why it stands", "What resolves it"],
     ["No human playtest data", "All evaluation is against scripted players", "M5 playtest; telemetry format exists"],
-    ["Dwell rate is an assumption", "Calibrated to ~24% of windows, not measured", "Same playtest"],
-    ["Models close at interception", "VOMM and order-1 within noise on capture rate", "Clear gap is at prediction, not pursuit"],
-    ["Lookahead can hurt", "At 61% single-step accuracy, rollout error compounds", "Expected; documented, not hidden"],
-    ["No 3D integration", "Godot build not started; art study only", "M3, next cycle"],
+    ["Writing behaviour is modelled, not observed", "Record-once plus occasional re-verify is a guess at how people write", "Same playtest"],
+    ["Predicting WHEN you stop is weak", "17% recall on a rare event; four attempts to improve it failed", "The open problem"],
+    ["Models close at interception", "VOMM and order-1 within noise on capture rate", "The clear gap is at prediction, not pursuit"],
+    ["First-person build is WebGL, not an engine", "Hand-written; no engine tooling, lighting or animation", "M3, the Godot port"],
 ], col_w=[3.1, 4.9, 3.9], size=11.5, head_size=9)
 tb(s, 0.72, 5.3, 11.9, 1.2,
    "Roadmap — M3 the Godot greybox driven by the room graph; M7 polygonal room tiles where side count is the "

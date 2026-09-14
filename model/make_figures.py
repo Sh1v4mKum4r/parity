@@ -126,10 +126,16 @@ def fig_scaling(out):
         ("random-walk",    "Random (control)", "#9aa3ab"),
     ]
     fig, ax = plt.subplots(figsize=(8.2, 4.3))
+    ends = sorted(((E[str(sizes[-1])][k], k, lbl, c) for k, lbl, c in series), reverse=True)
+    spread, prev = [], None
+    for v, k, lbl, c in ends:                     # push labels apart when lines converge
+        y = v if prev is None else min(v, prev - 14)
+        spread.append((k, lbl, c, y)); prev = y
+    pos = {k: y for k, _, _, y in spread}
     for key, label, col in series:
         ys = [E[str(n)][key] for n in sizes]
         ax.plot(sizes, ys, color=col, lw=2, marker="o", ms=5, zorder=3)
-        ax.text(sizes[-1] + 0.8, ys[-1], label, color=col, fontsize=9, va="center")
+        ax.text(sizes[-1] + 0.8, pos[key], label, color=col, fontsize=9, va="center")
     ax.set_xlabel("Rooms in the facility"); ax.set_ylabel("Captures per 1000 player moves")
     ax.set_xticks(sizes); ax.set_xlim(sizes[0] - 1, sizes[-1] + 11)
     ax.set_ylim(0, max(E[str(sizes[0])].values()) * 1.12)
@@ -143,22 +149,21 @@ def fig_scaling(out):
 
 def fig_dwell(out):
     E = M["e10_dwell_learned"]
-    labels = ["Assume they\nalways move", "VOMM\n(all rooms)",
-              "VOMM in rooms\nwith nothing to record", "VOMM in rooms\nwith a codebook"]
-    vals = [E["baseline_accuracy"], E["vomm_accuracy"], E["vomm_plain_rooms"], E["vomm_task_rooms"]]
-    cols = ["#9aa3ab", "#2a78d6", "#2a78d6", "#2a78d6"]
+    labels = ["Assume they\nalways move", "VOMM\nrecall", "VOMM\nprecision"]
+    vals = [E["baseline_recall"] * 100, E["vomm_recall"] * 100, E["vomm_precision"] * 100]
+    cols = ["#9aa3ab", "#2a78d6", "#6fa8ff"]
     fig, ax = plt.subplots(figsize=(8.2, 4.0))
-    ax.bar(range(len(vals)), [x * 100 for x in vals], width=0.5, color=cols, zorder=3)
-    for i, x in enumerate(vals):
-        ax.text(i, x * 100 + 1.8, f"{x*100:.0f}%", ha="center", fontsize=11,
-                fontweight="bold", color=INK)
-    ax.set_xticks(range(len(vals))); ax.set_xticklabels(labels, fontsize=9)
-    ax.set_ylabel("Accuracy predicting 'will they stay?'"); ax.set_ylim(0, 112)
-    ax.set_yticks([0, 25, 50, 75, 100]); ax.set_yticklabels(["0%", "25%", "50%", "75%", "100%"])
+    ax.bar(range(len(vals)), vals, width=0.44, color=cols, zorder=3)
+    for i, v in enumerate(vals):
+        ax.text(i, v + 1.6, f"{v:.0f}%", ha="center", fontsize=11, fontweight="bold", color=INK)
+    ax.set_xticks(range(len(vals))); ax.set_xticklabels(labels, fontsize=9.5)
+    ax.set_xlim(-0.6, len(vals) - 0.4)
+    ax.set_ylabel("Of the windows the player declined"); ax.set_ylim(0, 60)
+    ax.set_yticks([0, 20, 40]); ax.set_yticklabels(["0%", "20%", "40%"])
     ax.grid(axis="y", color=GRID, lw=0.8, zorder=0); ax.set_axisbelow(True)
-    _finish(ax, "It learned where you stop to write",
-            f"Dwell as a binary prediction task. Actual dwell rate {E['actual_dwell_rate']*100:.0f}%; "
-            "pages take 1-4 windows")
+    _finish(ax, "Knowing WHEN someone stops to write is still the open problem",
+            f"Dwell is rare ({E['dwell_rate']*100:.0f}% of windows), so accuracy is meaningless: "
+            "'always move' scores 96% and learns nothing")
     fig.tight_layout(); fig.savefig(out, dpi=200); plt.close(fig)
 
 
@@ -166,20 +171,20 @@ def fig_localisation(out):
     E = M["e11_localisation"]
     covs = sorted(E["uniform"], key=float)
     fig, ax = plt.subplots(figsize=(8.2, 4.1))
-    for key, label, col in (("uniform", "Uniform prior", "#eb6834"),
-                            ("learned", "Learned transition prior", "#2a78d6")):
+    for i, (key, label, col) in enumerate((("uniform", "Uniform prior", "#eb6834"),
+                                           ("learned", "Learned prior", "#2a78d6"))):
         ys = [E[key][c]["localisation"] * 100 for c in covs]
         xs = [float(c) * 100 for c in covs]
         ax.plot(xs, ys, color=col, lw=2, marker="o", ms=5, zorder=3)
-        ax.text(xs[0] - 3, ys[0], label, color=col, fontsize=9, ha="right", va="center")
+        ax.text(xs[0] - 3, ys[0] + (8 if i == 0 else -8), label, color=col,
+                fontsize=9, ha="right", va="center")
     ax.set_xlabel("Doors carrying a live sensor"); ax.set_ylabel("Antagonist locates the player")
     ax.set_xlim(-22, 108); ax.set_ylim(0, 108)
     ax.set_xticks([20, 40, 60, 80, 100]); ax.set_xticklabels(["20%", "40%", "60%", "80%", "100%"])
     ax.set_yticks([0, 25, 50, 75, 100]); ax.set_yticklabels(["0%", "25%", "50%", "75%", "100%"])
     ax.grid(axis="y", color=GRID, lw=0.8, zorder=0); ax.set_axisbelow(True)
     _finish(ax, "Full sensor coverage is still perfect tracking",
-            "Silence tells it you stayed, so a fully wired facility leaks everything. "
-            "Belief filter over door events, 1200 windows x 12 seeds")
+            "Silence tells it you stayed, so a fully wired facility leaks everything")
     fig.tight_layout(); fig.savefig(out, dpi=200); plt.close(fig)
 
 

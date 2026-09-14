@@ -427,12 +427,11 @@
   },
   "e10_dwell_learned": {
     "dwell_max": 3,
-    "actual_dwell_rate": 0.043722222222222225,
-    "baseline_accuracy": 0.9562777777777778,
-    "vomm_accuracy": 0.9435555555555556,
-    "vomm_task_rooms": 0.9321353971461687,
-    "vomm_plain_rooms": 1.0,
-    "lift_points": -1.272222222222219
+    "dwell_rate": 0.043722222222222225,
+    "baseline_recall": 0.0,
+    "vomm_recall": 0.16763809716533612,
+    "vomm_precision": 0.2647605053855054,
+    "vomm_recall_task_rooms": 0.16763809716533612
   },
   "e11_localisation": {
     "uniform": {
