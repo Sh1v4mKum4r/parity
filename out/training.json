@@ -1,8 +1,9 @@
 {
-  "no model": 0.37180555555555556,
-  "order-1 Markov": 0.4482638888888889,
-  "VOMM": 0.5988888888888889,
-  "VOMM tuned": 0.5988888888888889,
-  "+ goal inference": 0.566875,
-  "oracle ceiling": 0.70875
+  "no model": 0.48244444444444445,
+  "no model (settled)": 0.4851666666666667,
+  "order-1 Markov": 0.5755,
+  "order-1 Markov (settled)": 0.5976666666666667,
+  "VOMM": 0.8523888888888889,
+  "VOMM (settled)": 0.8896666666666667,
+  "oracle ceiling": 0.9181111111111111
 }

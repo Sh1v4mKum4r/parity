@@ -54,6 +54,7 @@ class HabitualBot:
         self.dwell_max = dwell_max
         self.waits = 0
         self._writing = 0
+        self.recorded = set()      # you copy a codebook once, not every time you pass it
         stops = [r for r in fac.rooms if fac.rooms[r].has_table]
         stops += [r for r in fac.rooms if fac.rooms[r].has_terminal]
         stops += [fac.comms_room]
@@ -93,11 +94,19 @@ class HabitualBot:
             self.waits += 1
             self._intended = None
             return self.pos                      # mid-page, decline the window
-        if has_work and self.rng.random() < self.write_p * 1.6:
-            self._writing = self.rng.randint(0, self.dwell_max)  # a page can take several windows
+        # A player stops to write when there is something NEW to record. Coming
+        # back past a codebook they already hold, they walk on -- with an
+        # occasional pause to re-verify a page they no longer trust.
+        if has_work and self.pos not in self.recorded:
+            self.recorded.add(self.pos)
+            self._writing = self.rng.randint(0, self.dwell_max)
             self.waits += 1
             self._intended = None
             return self.pos
+        if has_work and self.rng.random() < self.write_p * 0.22:
+            self.waits += 1
+            self._intended = None
+            return self.pos                      # re-verifying an old page
         if self.rng.random() < self.noise:
             nbs = self.fac.neighbors(self.pos)
             nxt = self.rng.choice(nbs) if nbs else self.pos
@@ -164,6 +173,8 @@ class EvasiveBot:
         self.pos = self.stops[0]
         self.waits = 0
         self.laps = 0
+        self.recorded = set()
+        self.write_p = kw.get("write_p", 0.18)
 
     @property
     def target(self) -> int:
@@ -174,6 +185,12 @@ class EvasiveBot:
             self.stop_i += 1
             if self.stop_i % len(self.stops) == 0:
                 self.laps += 1
+        room = self.fac.rooms[self.pos]
+        has_work = room.has_table or room.has_terminal or room.is_comms
+        if has_work and self.pos not in self.recorded:
+            self.recorded.add(self.pos); self.waits += 1; return self.pos
+        if has_work and self.rng.random() < self.write_p * 0.22:
+            self.waits += 1; return self.pos
         if self.rng.random() < self.wait_p:
             self.waits += 1
             return self.pos                      # decline the window on purpose
@@ -214,6 +231,7 @@ class StealthBot:
         self.disabled = 0
         self.write_p = kw.get("write_p", 0.18)
         self._writing = 0
+        self.recorded = set()
         if disable_budget and net is not None:
             self._burn_sensors(disable_budget)
 
@@ -273,8 +291,10 @@ class StealthBot:
         has_work = room.has_table or room.has_terminal or room.is_comms
         if self._writing > 0:
             self._writing -= 1; self.waits += 1; return self.pos
-        if has_work and self.rng.random() < self.write_p * 1.6:
-            self._writing = 0; self.waits += 1; return self.pos
+        if has_work and self.pos not in self.recorded:
+            self.recorded.add(self.pos); self.waits += 1; return self.pos
+        if has_work and self.rng.random() < self.write_p * 0.22:
+            self.waits += 1; return self.pos
         dist = self._dist(self.target)
         here = dist.get(self.pos, 99)
         best, best_score = self.pos, -1e9

@@ -544,9 +544,14 @@ def e12_counterplay(coverages=(1.0, 0.6, 0.3), steps=1500):
     like.
     """
     from bots import _bfs_path
+    # NOTE ON FAIRNESS: route_around and disable_3 use StealthBot's navigation, so
+    # comparing them against HabitualBot would confound strategy with movement code.
+    # "plain" is StealthBot with neither behaviour enabled -- that is the baseline
+    # the two sensor strategies are measured against.
     STRATS = {
         "habitual":     lambda f, s, n: HabitualBot(f, seed=s + 100),
         "evasive":      lambda f, s, n: EvasiveBot(f, seed=s + 100),
+        "plain":        lambda f, s, n: StealthBot(f, seed=s + 100, net=n, detour=0.0),
         "route_around": lambda f, s, n: StealthBot(f, seed=s + 100, net=n, detour=0.5),
         "disable_3":    lambda f, s, n: StealthBot(f, seed=s + 100, net=n, detour=0.0,
                                                    disable_budget=3),
@@ -586,9 +591,10 @@ def e12_counterplay(coverages=(1.0, 0.6, 0.3), steps=1500):
                 "sd": statistics.pstdev([c / l for c, l in zip(caps, laps)]),
                 "laps": statistics.mean(laps),
             }
-        base = row["habitual"]["per_lap"]
         for k in row:
-            row[k]["risk_change_pct"] = 100.0 * (row[k]["per_lap"] / base - 1)
+            base = row["plain"]["per_lap"] if k in ("route_around", "disable_3", "plain") \
+                   else row["habitual"]["per_lap"]
+            row[k]["risk_change_pct"] = 100.0 * (row[k]["per_lap"] / base - 1) if base else 0.0
         out[f"{cov:.2f}"] = row
     return out
 

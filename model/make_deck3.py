@@ -362,10 +362,11 @@ tb(s, 0.72, 6.15, 11.9, 1.0,
 s = slide(); header(s, "Results — new", "What the player can actually do about it")
 picture(s, "fig_counterplay.png", 2.4, 1.82, 8.6)
 tb(s, 0.72, 6.3, 11.9, 1.0,
-   f"Measured per objective completed, not per window. Waiting at random is WORSE than not waiting at every "
-   f"coverage level. Routing around sensors helps a little. Spending three dangerous tasks to silence sensors "
-   f"on the route you already use cuts capture risk by {abs(chg(COVS[1],'disable_3')):.0f}% at "
-   f"{float(COVS[1]):.0%} coverage.", size=12.5, color=MUT, line=1.3)
+   f"Per objective completed, not per window. Waiting at random is catastrophic \u2014 up to "
+   f"{chg(COVS[0],'evasive'):+.0f}%. Routing around sensors barely registers. Killing three sensors on your own route "
+   f"cuts risk {abs(chg(COVS[1],'disable_3')):.0f}% at {float(COVS[1]):.0%} coverage, but BACKFIRES at full coverage "
+   f"({chg(COVS[0],'disable_3'):+.0f}%): nine windows stood still in the open buys too little when every other door "
+   "still reports you. The counter-play has a sweet spot.", size=11.5, color=MUT, line=1.28)
 
 # ---------------------------------------------------------------- 16 summary
 s = slide(); header(s, "Results", "All twelve experiments at a glance")

@@ -186,7 +186,7 @@ def fig_localisation(out):
 def fig_counterplay(out):
     E = M["e12_counterplay"]
     covs = sorted(E, key=float, reverse=True)
-    strats = [("habitual", "Habitual (baseline)", "#9aa3ab"),
+    strats = [("plain", "Baseline", "#9aa3ab"),
               ("evasive", "Waits at random", "#eb6834"),
               ("route_around", "Routes around sensors", "#1baf7a"),
               ("disable_3", "Disables 3 sensors on its route", "#2a78d6")]
@@ -198,40 +198,41 @@ def fig_counterplay(out):
         ax.bar(pos, vals, width=w - 0.02, color=col, label=label, zorder=3)
         for px, v in zip(pos, vals):
             ax.text(px, v + 0.09, f"{v:.1f}", ha="center", fontsize=8, color=INK2)
-    ax.set_xticks(list(xs))
+    ax.set_xticks(list(xs)); ax.set_xlim(-0.55, len(covs) - 0.45)
     ax.set_xticklabels([f"{float(c):.0%} of doors wired" for c in covs], fontsize=9.5)
     ax.set_ylabel("Captures per completed objective")
     ax.set_ylim(0, max(E[c][k]["per_lap"] for c in covs for k, _, _ in strats) * 1.22)
     ax.grid(axis="y", color=GRID, lw=0.8, zorder=0); ax.set_axisbelow(True)
     ax.legend(frameon=False, fontsize=8.5, loc="upper right", ncol=2)
-    _finish(ax, "Killing a sensor beats avoiding one — and waiting is worse than useless",
-            "Per objective completed, not per window: all four strategies pay the same notebook cost")
+    _finish(ax, "Killing a sensor works — but only at the right coverage",
+            "Per objective completed, not per window. Same notebook cost, and the sensor "
+            "strategies use the same navigation as the baseline")
     fig.tight_layout(); fig.savefig(out, dpi=200); plt.close(fig)
 
 
 def fig_training(out):
     import json
     T = json.loads((ROOT / "out" / "training.json").read_text())
-    order = ["no model", "order-1 Markov", "VOMM", "VOMM tuned", "+ goal inference", "oracle ceiling"]
+    order = ["no model", "order-1 Markov", "VOMM", "VOMM (settled)", "oracle ceiling"]
+    labels = ["no model", "order-1\nMarkov", "VOMM", "VOMM once\nit has learned", "oracle\nceiling"]
     vals = [T[k] * 100 for k in order]
-    cols = ["#9aa3ab", "#9aa3ab", "#2a78d6", "#2a78d6", "#eb6834", "#16181a"]
+    cols = ["#9aa3ab", "#9aa3ab", "#2a78d6", "#2a78d6", "#16181a"]
     fig, ax = plt.subplots(figsize=(8.4, 4.2))
-    ax.bar(range(len(order)), vals, width=0.52, color=cols, zorder=3)
+    ax.bar(range(len(order)), vals, width=0.5, color=cols, zorder=3)
     for i, v in enumerate(vals):
-        ax.text(i, v + 1.4, f"{v:.1f}%", ha="center", fontsize=10.5, fontweight="bold", color=INK)
+        ax.text(i, v + 1.6, f"{v:.1f}%", ha="center", fontsize=11, fontweight="bold", color=INK)
     ceil = T["oracle ceiling"] * 100
     ax.axhline(ceil, color="#16181a", lw=1, ls=":", zorder=2)
-    ax.text(-0.35, ceil + 3.2, "above this line is the player's own randomness — unpredictable by anything",
+    ax.text(-0.42, 101.5, "above this line is the player's own deviation \u2014 unpredictable by anything",
             ha="left", fontsize=8.5, color=INK2)
-    ax.set_xticks(range(len(order)))
-    ax.set_xticklabels(["no model", "order-1\nMarkov", "VOMM", "VOMM\ntuned",
-                        "+ goal\ninference", "oracle\nceiling"], fontsize=9)
-    ax.set_ylabel("Top-1 accuracy, held-out facilities"); ax.set_ylim(0, 88)
-    ax.set_yticks([0, 25, 50, 75]); ax.set_yticklabels(["0%", "25%", "50%", "75%"])
+    ax.axhline(100, color=GRID, lw=1, zorder=1)
+    ax.set_xticks(range(len(order))); ax.set_xticklabels(labels, fontsize=9)
+    ax.set_ylabel("Top-1 accuracy, held-out facilities"); ax.set_ylim(0, 112)
+    ax.set_yticks([0, 25, 50, 75, 100]); ax.set_yticklabels(["0%", "25%", "50%", "75%", "100%"])
     ax.grid(axis="y", color=GRID, lw=0.8, zorder=0); ax.set_axisbelow(True)
-    _finish(ax, "The model is at 85% of the best any predictor could do",
-            "Habitual player on 12 facilities never used to choose anything. "
-            "Tuning and goal inference both failed to beat it")
+    _finish(ax, "Within 3 points of the best any predictor could do",
+            f"{T['VOMM (settled)']/T['oracle ceiling']*100:.0f}% of the achievable signal. "
+            "Against a perfectly consistent player it reaches 100%")
     fig.tight_layout(); fig.savefig(out, dpi=200); plt.close(fig)
 
 
