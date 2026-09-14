@@ -162,6 +162,53 @@ def fig_dwell(out):
     fig.tight_layout(); fig.savefig(out, dpi=200); plt.close(fig)
 
 
+def fig_localisation(out):
+    E = M["e11_localisation"]
+    covs = sorted(E["uniform"], key=float)
+    fig, ax = plt.subplots(figsize=(8.2, 4.1))
+    for key, label, col in (("uniform", "Uniform prior", "#eb6834"),
+                            ("learned", "Learned transition prior", "#2a78d6")):
+        ys = [E[key][c]["localisation"] * 100 for c in covs]
+        xs = [float(c) * 100 for c in covs]
+        ax.plot(xs, ys, color=col, lw=2, marker="o", ms=5, zorder=3)
+        ax.text(xs[0] - 3, ys[0], label, color=col, fontsize=9, ha="right", va="center")
+    ax.set_xlabel("Doors carrying a live sensor"); ax.set_ylabel("Antagonist locates the player")
+    ax.set_xlim(-22, 108); ax.set_ylim(0, 108)
+    ax.set_xticks([20, 40, 60, 80, 100]); ax.set_xticklabels(["20%", "40%", "60%", "80%", "100%"])
+    ax.set_yticks([0, 25, 50, 75, 100]); ax.set_yticklabels(["0%", "25%", "50%", "75%", "100%"])
+    ax.grid(axis="y", color=GRID, lw=0.8, zorder=0); ax.set_axisbelow(True)
+    _finish(ax, "Full sensor coverage is still perfect tracking",
+            "Silence tells it you stayed, so a fully wired facility leaks everything. "
+            "Belief filter over door events, 1200 windows x 12 seeds")
+    fig.tight_layout(); fig.savefig(out, dpi=200); plt.close(fig)
+
+
+def fig_counterplay(out):
+    E = M["e12_counterplay"]
+    covs = sorted(E, key=float, reverse=True)
+    strats = [("habitual", "Habitual (baseline)", "#9aa3ab"),
+              ("evasive", "Waits at random", "#eb6834"),
+              ("route_around", "Routes around sensors", "#1baf7a"),
+              ("disable_3", "Disables 3 sensors on its route", "#2a78d6")]
+    fig, ax = plt.subplots(figsize=(8.4, 4.3))
+    w, xs = 0.2, range(len(covs))
+    for i, (key, label, col) in enumerate(strats):
+        vals = [E[c][key]["per_lap"] for c in covs]
+        pos = [x + (i - 1.5) * w for x in xs]
+        ax.bar(pos, vals, width=w - 0.02, color=col, label=label, zorder=3)
+        for px, v in zip(pos, vals):
+            ax.text(px, v + 0.09, f"{v:.1f}", ha="center", fontsize=8, color=INK2)
+    ax.set_xticks(list(xs))
+    ax.set_xticklabels([f"{float(c):.0%} of doors wired" for c in covs], fontsize=9.5)
+    ax.set_ylabel("Captures per completed objective")
+    ax.set_ylim(0, max(E[c][k]["per_lap"] for c in covs for k, _, _ in strats) * 1.22)
+    ax.grid(axis="y", color=GRID, lw=0.8, zorder=0); ax.set_axisbelow(True)
+    ax.legend(frameon=False, fontsize=8.5, loc="upper right", ncol=2)
+    _finish(ax, "Killing a sensor beats avoiding one — and waiting is worse than useless",
+            "Per objective completed, not per window: all four strategies pay the same notebook cost")
+    fig.tight_layout(); fig.savefig(out, dpi=200); plt.close(fig)
+
+
 if __name__ == "__main__":
     out = ROOT / "out"; out.mkdir(exist_ok=True)
     fig_accuracy(out / "fig_accuracy.png")
@@ -170,4 +217,6 @@ if __name__ == "__main__":
     fig_disruption(out / "fig_disruption.png")
     fig_scaling(out / "fig_scaling.png")
     fig_dwell(out / "fig_dwell.png")
+    fig_localisation(out / "fig_localisation.png")
+    fig_counterplay(out / "fig_counterplay.png")
     print("figures written:", *[p.name for p in sorted(out.glob("*.png"))])

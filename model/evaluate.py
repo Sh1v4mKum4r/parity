@@ -15,12 +15,13 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 from facility import Facility
-from bots import HabitualBot, ExplorerBot, RandomBot, EvasiveBot
+from bots import HabitualBot, ExplorerBot, RandomBot, EvasiveBot, StealthBot
 from predictors import UniformNeighbour, MarkovOrder1, VOMM, DwellModel
 from director import ModelDirector, RandomAmbush, DegreeCamp, FullDirector, InterceptDirector, DwellAwareDirector
+from sensors import SensorNet, BeliefTracker
 
 BOTS = {"habitual": HabitualBot, "explorer": ExplorerBot,
-        "random": RandomBot, "evasive": EvasiveBot}
+        "random": RandomBot, "evasive": EvasiveBot, "stealth": StealthBot}
 
 
 def opts(fac, r):
@@ -494,6 +495,104 @@ def e10_dwell_learned(steps=1500, dwell_max=3):
     return out
 
 
+
+def e11_localisation(coverages=(1.0, 0.8, 0.6, 0.4, 0.2), steps=1200):
+    """How well can the antagonist locate the player from door events alone?
+
+    Sensor coverage is the fraction of doors carrying a live motion detector.
+    Two transition priors are compared: a filter that assumes nothing about
+    habits (uniform) against one that learns an order-1 model from its own track.
+    """
+    out = {}
+    for prior in ("uniform", "learned"):
+        row = {}
+        for cov in coverages:
+            accs, ents = [], []
+            for seed in range(SEEDS):
+                fac = Facility(10, seed=seed)
+                bot = BOTS["habitual"](fac, seed=seed + 100)
+                net = SensorNet(fac, coverage=cov, seed=seed)
+                bt = BeliefTracker(fac, net, transition_prior=prior)
+                prev, hit, n, ent = bot.pos, 0, 0, 0.0
+                for _ in range(steps):
+                    nxt = bot.step(); bot.resync(nxt)
+                    bt.step(net.event(prev, nxt))
+                    n += 1
+                    hit += (bt.map_room() == nxt)
+                    ent += bt.entropy()
+                    prev = nxt
+                accs.append(hit / n); ents.append(ent / n)
+            row[f"{cov:.2f}"] = {"localisation": statistics.mean(accs),
+                                 "entropy_bits": statistics.mean(ents)}
+        out[prior] = row
+    return out
+
+
+def e12_counterplay(coverages=(1.0, 0.6, 0.3), steps=1500):
+    """What can the player actually DO about a predictive antagonist?
+
+    Milestone M6 exists because of a negative result: under perfect observation an
+    evasive player who declined a third of all windows cut their capture risk by
+    only 1.7%. The diagnosis was the observation model. Here the antagonist hunts
+    on a belief built from door sensors, and four player strategies are compared.
+
+    The metric is captures per completed objective lap, not per window. A player
+    who is caught less often only because they achieved less has not defended
+    themselves, and a per-window rate hides exactly that.
+
+    All four strategies pay the same notebook cost, so the comparison is like for
+    like.
+    """
+    from bots import _bfs_path
+    STRATS = {
+        "habitual":     lambda f, s, n: HabitualBot(f, seed=s + 100),
+        "evasive":      lambda f, s, n: EvasiveBot(f, seed=s + 100),
+        "route_around": lambda f, s, n: StealthBot(f, seed=s + 100, net=n, detour=0.5),
+        "disable_3":    lambda f, s, n: StealthBot(f, seed=s + 100, net=n, detour=0.0,
+                                                   disable_budget=3),
+    }
+    out = {}
+    for cov in coverages:
+        row = {}
+        for name, make in STRATS.items():
+            caps, laps = [], []
+            for seed in range(SEEDS):
+                fac = Facility(10, seed=seed)
+                net = SensorNet(fac, coverage=cov, seed=seed)
+                bot = make(fac, seed, net)
+                bt = BeliefTracker(fac, net)
+                rng = random.Random(seed + 31)
+                epos = rng.choice(list(fac.rooms))
+                prev, caught, seen = bot.pos, 0, {}
+                for t in range(steps):
+                    # below the confidence gate the belief is too diffuse to chase,
+                    # so it sweeps instead of camping on a weak argmax
+                    target = (bt.map_room() if bt.confidence() >= 0.35
+                              else min(fac.rooms, key=lambda r: (seen.get(r, -1), -bt.b[r])))
+                    seen[epos] = t
+                    path = _bfs_path(fac, epos, target)
+                    epos = path[1] if len(path) > 1 else epos
+                    nxt = bot.step(); bot.resync(nxt)
+                    bt.step(net.event(prev, nxt))
+                    if nxt == epos:
+                        caught += 1
+                        bt.saw(nxt)                       # co-location is a sighting
+                        nxt = rng.choice(list(fac.rooms)); bot.resync(nxt)
+                        epos = rng.choice(list(fac.rooms))
+                    prev = nxt
+                caps.append(caught); laps.append(max(getattr(bot, "laps", 0), 1))
+            row[name] = {
+                "per_lap": statistics.mean(c / l for c, l in zip(caps, laps)),
+                "sd": statistics.pstdev([c / l for c, l in zip(caps, laps)]),
+                "laps": statistics.mean(laps),
+            }
+        base = row["habitual"]["per_lap"]
+        for k in row:
+            row[k]["risk_change_pct"] = 100.0 * (row[k]["per_lap"] / base - 1)
+        out[f"{cov:.2f}"] = row
+    return out
+
+
 def main():
     res = {
         "config": {"rooms": 10, "steps": STEPS, "seeds": SEEDS, "context": CTX},
@@ -508,6 +607,8 @@ def main():
         "e8_waiting": e8_waiting_defends(),
         "e9_dwell": e9_dwell_aware(),
         "e10_dwell_learned": e10_dwell_learned(),
+        "e11_localisation": e11_localisation(),
+        "e12_counterplay": e12_counterplay(),
     }
     out = Path(__file__).parent.parent / "out"
     out.mkdir(exist_ok=True)
@@ -521,7 +622,9 @@ def main():
     print("E7 scaling    :", json.dumps(res["e7_scaling"]))
     print("E8 waiting    :", json.dumps(res["e8_waiting"]))
     print("E9 dwell-aware:", json.dumps(res["e9_dwell"]))
-    print("E10 dwell learned:", json.dumps(res["e10_dwell_learned"], indent=2))
+    print("E10 dwell learned:", json.dumps(res["e10_dwell_learned"]))
+    print("E11 localisation :", json.dumps(res["e11_localisation"], indent=2))
+    print("E12 counter-play :", json.dumps(res["e12_counterplay"], indent=2))
     return res
 
 

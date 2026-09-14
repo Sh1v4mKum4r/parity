@@ -44,7 +44,7 @@ class HabitualBot:
     name = "habitual"
 
     def __init__(self, fac, seed: int = 0, noise: float = 0.08, skew: bool = False,
-                 write_p: float = 0.18, dwell_max: int = 0):
+                 write_p: float = 0.18, dwell_max: int = 0, **kw):
         self.fac, self.rng, self.noise = fac, random.Random(seed), noise
         # A player does not linger at random -- they linger where there is
         # something to record: a codebook to copy, a sequence to decode, the
@@ -180,6 +180,127 @@ class EvasiveBot:
         path = _bfs_path(self.fac, self.pos, self.target)
         self.pos = path[1] if len(path) > 1 else self.pos
         return self.pos
+
+    def resync(self, actual: int) -> None:
+        self.pos = actual
+
+
+class StealthBot:
+    """A player who routes around the sensors.
+
+    The evasive player waits at random, which denies the antagonist a little
+    information but nothing it cannot recover. This one knows which doors are
+    wired -- the knowledge the fiction says you buy with dangerous tasks -- and
+    prefers to travel through the gaps, accepting a longer route to stay off the
+    trail. It only waits when every exit would announce it.
+    """
+    name = "stealth"
+
+    def __init__(self, fac, seed: int = 0, net=None, detour: float = 2.0,
+                 disable_budget: int = 0, **kw):
+        self.fac, self.rng, self.net, self.detour = fac, random.Random(seed), net, detour
+        self.disable_budget = disable_budget
+        stops = [r for r in fac.rooms if fac.rooms[r].has_table]
+        stops += [r for r in fac.rooms if fac.rooms[r].has_terminal]
+        stops += [fac.comms_room]
+        self.stops = stops or [min(fac.rooms)]
+        self.stop_i = 0
+        self.pos = self.stops[0]
+        self.waits = 0
+        self.laps = 0
+        self.quiet_moves = 0
+        self.loud_moves = 0
+        self._held = 0
+        self.disabled = 0
+        self.write_p = kw.get("write_p", 0.18)
+        self._writing = 0
+        if disable_budget and net is not None:
+            self._burn_sensors(disable_budget)
+
+    def _burn_sensors(self, budget: int):
+        """Spend dangerous tasks to silence sensors on the route you already want.
+
+        The alternative -- detouring around live doors -- costs more exposure than
+        it saves. This models the fiction's actual mechanic: you do not avoid the
+        sensor, you kill it.
+        """
+        route, cur = [], self.stops[0]
+        for nxt in self.stops[1:] + [self.stops[0]]:
+            d, prev = {cur: 0}, {cur: None}
+            q = [cur]
+            while q:
+                c = q.pop(0)
+                if c == nxt: break
+                for nb in self.fac.neighbors(c):
+                    if nb not in d:
+                        d[nb] = d[c] + 1; prev[nb] = c; q.append(nb)
+            path, c = [], nxt
+            while c is not None:
+                path.append(c); c = prev.get(c)
+            path.reverse()
+            route += list(zip(path, path[1:]))
+            cur = nxt
+        from collections import Counter
+        freq = Counter(tuple(sorted(e)) for e in route)
+        for e, _ in freq.most_common():
+            if self.disabled >= budget: break
+            if e in self.net.wired:
+                self.net.wired.discard(e)
+                self.disabled += 1
+
+    @property
+    def target(self) -> int:
+        return self.stops[self.stop_i % len(self.stops)]
+
+    def _dist(self, src):
+        d, q = {src: 0}, [src]
+        while q:
+            cur = q.pop(0)
+            for nb in self.fac.neighbors(cur):
+                if nb not in d:
+                    d[nb] = d[cur] + 1
+                    q.append(nb)
+        return d
+
+    def step(self) -> int:
+        if self.pos == self.target:
+            self.stop_i += 1
+            if self.stop_i % len(self.stops) == 0:
+                self.laps += 1
+        # same notebook cost as the habitual player: you stop where there is
+        # something to record, or the comparison is not like for like
+        room = self.fac.rooms[self.pos]
+        has_work = room.has_table or room.has_terminal or room.is_comms
+        if self._writing > 0:
+            self._writing -= 1; self.waits += 1; return self.pos
+        if has_work and self.rng.random() < self.write_p * 1.6:
+            self._writing = 0; self.waits += 1; return self.pos
+        dist = self._dist(self.target)
+        here = dist.get(self.pos, 99)
+        best, best_score = self.pos, -1e9
+        for c in self.fac.neighbors(self.pos) + [self.pos]:
+            progress = here - dist.get(c, 99)          # +1 closer, -1 further
+            quiet = (c == self.pos) or (self.net is None) or (not self.net.is_wired(self.pos, c))
+            score = progress + (self.detour if quiet else 0.0)
+            if c == self.pos:
+                # waiting is a last resort, and gets rapidly more expensive:
+                # a player who never moves never escapes
+                score -= 0.9 + 1.6 * self._held
+            score += self.rng.random() * 0.01
+            if score > best_score:
+                best, best_score = c, score
+        if best == self.pos:
+            self.waits += 1; self._held += 1
+        else:
+            self._held = 0
+        if best == self.pos:
+            pass
+        elif self.net is not None and self.net.is_wired(self.pos, best):
+            self.loud_moves += 1
+        else:
+            self.quiet_moves += 1
+        self.pos = best
+        return best
 
     def resync(self, actual: int) -> None:
         self.pos = actual
