@@ -473,7 +473,7 @@ let mode = "play", cutting = null, prompt = "", dead = false, T_WINDOWS = 0;
 // the entity takes exactly one turn per room you enter, so a single step of the
 // model can be narrated instead of racing a 3-second window. P toggles it.
 let demo = new URLSearchParams(location.search).get("demo") === "1", stepFrom = 0, stepDoor = null;
-const STEP = demo ? "move" : "window";
+const STEP = () => demo ? "move" : "window";
 
 function nearestCell(x,z){
   let best=0, bd=1e9;
@@ -681,9 +681,9 @@ function die(){
   if(dead) return;
   dead = true; caught++;
   closeOverlay();
-  aiSay("I had them. It took " + T_WINDOWS + " " + STEP + "s.");
+  aiSay("I had them. It took " + T_WINDOWS + " " + STEP() + "s.");
   document.getElementById("deadsub").textContent =
-    "It reached room " + GLYPH[curCell] + " before you did, on " + STEP + " " + T_WINDOWS + ". " +
+    "It reached room " + GLYPH[curCell] + " before you did, on " + STEP() + " " + T_WINDOWS + ". " +
     (sent ? sent + (sent === 1 ? " signal" : " signals") + " got out before this one. " : "No signal got out. ") +
     "Your pages survive. So does its model of you.";
   document.getElementById("dead").style.display = "flex";
