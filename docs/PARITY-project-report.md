@@ -563,6 +563,12 @@ Overlays are a panel rather than a full screen, so the clock stays visible behin
 them. That is deliberate: they freeze movement but **not** time, and watching the
 window tick down while you are mid-page is the whole tension of the notebook.
 
+Two uncorrupted signals **ends the run as a win**: a SIGNAL CONFIRMED screen
+reporting the steps taken, codebooks read, signals lost, sensors cut and times
+caught. It closes on the thesis rather than a score — the antagonist never had to
+catch the player to get what it wanted, having observed every decision they made
+and kept all of them.
+
 Being caught **ends the run**. The facility regenerates and the codes change, but the
 player's notebook persists — and so does the antagonist's model of them, which is
 the point: the second run starts with it already knowing how you move.
