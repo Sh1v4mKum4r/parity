@@ -1225,6 +1225,15 @@ if(new URLSearchParams(location.search).has("die")){
   setTimeout(die, 0);
 }
 
+// ?press=KeyP[,KeyE...] fires real keydowns after start-up, so a headless run can
+// exercise the key bindings themselves rather than the functions behind them
+const _press = new URLSearchParams(location.search).get("press");
+if(_press){
+  startEl.style.display = "none";
+  for(const code of _press.split(",")) if(code)
+    dispatchEvent(new KeyboardEvent("keydown", {code, bubbles:true}));
+}
+
 // ?peek=1 stands you in a codebook room, facing its panel
 if(new URLSearchParams(location.search).has("peek")){
   startEl.style.display = "none";
