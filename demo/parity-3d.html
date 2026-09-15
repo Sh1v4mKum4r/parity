@@ -46,9 +46,25 @@
       <span>it thinks you are in</span><span id="map3" style="color:#e8dcc4">&mdash;</span></div>
   </div>
 </div>
+<div id="prompt" style="position:fixed;left:50%;bottom:16%;transform:translateX(-50%);
+     font-family:var(--mono);font-size:13px;color:#e8dcc4;text-shadow:0 2px 6px #000;
+     pointer-events:none;letter-spacing:.06em;display:none"></div>
+
+<div id="overlay" style="position:fixed;inset:0;background:#0b0a08;z-index:12;
+     display:none;flex-direction:column;padding:18px 20px;font-family:var(--mono)">
+  <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px">
+    <b id="ovtitle" style="color:#ffb545;letter-spacing:.18em;font-size:13px"></b>
+    <span style="color:#ff4d3d;font-size:11px">THE CLOCK IS STILL RUNNING &mdash; ESC to close</span>
+  </div>
+  <div id="ovbody" style="flex:1;min-height:0;display:flex;flex-direction:column"></div>
+</div>
+
 <div class="start" id="start"><div>
   <h1>P A R I T Y</h1>
-  <p>Eight cells of the facility. Record three codebooks, then reach the uplink.</p>
+  <p><b>E</b> read a codebook or use the uplink &nbsp;·&nbsp; <b>TAB</b> notebook &nbsp;·&nbsp;
+     <b>F</b> cut a door sensor</p>
+  <p>Find the codebook for the keyword the uplink is asking for, write the eight bits in your
+     notebook, carry them back, stage them and send. Twice.</p>
   <p>Doors all unlock together for a few seconds, then seal. Something is in here with
      you, it hears the doors you use, and it tells you what it is thinking &mdash; top right.</p>
   <p style="margin-top:14px">If your browser blocks mouse capture, drag to look or use the arrow keys.</p>
@@ -338,6 +354,20 @@ const isWired = (a,b) => wired.has(a+"-"+b) || wired.has(b+"-"+a);
 
 // role of each cell: codebooks to read, one uplink to transmit from
 const ROLE = CELLS.map((_,i) => i===0 ? "uplink" : (i%3===1 ? "codebook" : "plain"));
+const KEYWORDS = ["HELP US","WARNING","MAYDAY","ALERT","CODE RED"];
+const CODE = {}, KW = {};
+(function fillCodebooks(){
+  let s2 = 1337, k = 0;
+  const rr = () => (s2 = (s2*1664525 + 1013904223) >>> 0) / 4294967296;
+  CELLS.forEach((_, i) => {
+    if(ROLE[i] !== "codebook") return;
+    KW[i] = KEYWORDS[k++ % KEYWORDS.length];
+    CODE[i] = Array.from({length:8}, () => rr() < 0.5 ? "0" : "1").join("");
+  });
+})();
+let target = Object.keys(CODE).map(Number)[0] ?? 0;   // the keyword being asked for
+let reg = "00000000".split(""), staged = false, sent = 0, corrupted = 0;
+let mode = "play", cutting = null, prompt = "";
 
 function nearestCell(x,z){
   let best=0, bd=1e9;
@@ -424,12 +454,9 @@ function checkRoom(){
   const c = curCell;
   if(ROLE[c]==="codebook" && !visited.has(c)){
     visited.add(c);
-    msg = "Codebook " + GLYPH[c] + " recorded. " + visited.size + " of 3.";
+    msg = "Codebook " + GLYPH[c] + " is here. Press E to read it.";
   }
-  if(ROLE[c]==="uplink" && visited.size>=3 && !objective){
-    msg = "SIGNAL AWAY. You got it out.";
-    objective = 1;
-  }
+
 }
 function onEnterCell(from, to){ /* kept for the movement call site */ }
 
@@ -467,6 +494,21 @@ function resolveWindow(){
     CELLS.forEach((_,i)=>{ const t = searchSeen[i] ?? -1; if(t<ot){ ot=t; oldest=i; } });
     tgt = oldest;
     aiSay("Too unsure to commit. Sweeping " + GLYPH[tgt] + ".");
+  }
+  if(cutting){
+    if(curCell !== cutting.cell){ msg = "You moved. The sensor job is abandoned."; cutting = null; }
+    else if(--cutting.left <= 0){
+      wired.delete(cutting.key);
+      msg = "That sensor is dead.";
+      aiSay("I have lost a door. You can use it without telling me.");
+      cutting = null;
+    }
+  }
+  // it edits what you cannot see: a staged byte while you are away from the uplink
+  if(staged && ROLE[curCell] !== "uplink" && conf >= 0.4 && Math.random() < 0.5){
+    const i = Math.floor(Math.random()*8);
+    reg[i] = reg[i]==="0" ? "1" : "0";
+    aiSay("You are not at the uplink. I turned over one of the cells you staged.");
   }
   searchSeen[entityCell] = performance.now();
   entityCell = bfsStep(entityCell, tgt);
@@ -507,6 +549,161 @@ if(new URLSearchParams(location.search).get("diag") === "1"){
   el.id = "gldiag"; el.textContent = DIAG;
   el.style.cssText = "position:fixed;left:8px;bottom:8px;z-index:99;color:#5fd39a;font-size:11px";
   document.body.appendChild(el);
+}
+
+// ---------------------------------------------------------------- interaction
+function nearestDoorway(){
+  let best = null, bd = 3.2;
+  for(const d of DOORWAYS){
+    if(d.a !== curCell && d.b !== curCell) continue;
+    const dist = Math.hypot(cam.x - d.x, cam.z - d.z);
+    if(dist < bd){ bd = dist; best = d; }
+  }
+  return best;
+}
+function sensorKey(d){ return d.a < d.b ? d.a+"-"+d.b : d.b+"-"+d.a; }
+
+function currentPrompt(){
+  if(mode !== "play") return "";
+  const r = ROLE[curCell];
+  if(r === "codebook") return "E &mdash; read codebook " + GLYPH[curCell];
+  if(r === "uplink")   return "E &mdash; the uplink";
+  const d = nearestDoorway();
+  if(d && wired.has(sensorKey(d)))
+    return cutting ? "cutting &mdash; " + cutting.left + " windows left, hold still"
+                   : "F &mdash; cut the sensor on this door (3 windows)";
+  return "";
+}
+
+function hudVisible(on){
+  ["hud2", "prompt"].forEach(id => {
+    const e = document.getElementById(id); if(e) e.style.visibility = on ? "visible" : "hidden";
+  });
+  document.querySelectorAll(".hud, .tag").forEach(e => e.style.visibility = on ? "visible" : "hidden");
+}
+
+function openOverlay(kind){
+  mode = kind;
+  hudVisible(false);
+  const ov = document.getElementById("overlay");
+  ov.style.display = "flex";
+  document.getElementById("ovtitle").innerHTML =
+    kind === "book" ? "NOTEBOOK" : kind === "code" ? "CODEBOOK &nbsp;" + GLYPH[curCell]
+                                                  : "OUTBOUND REGISTER";
+  const body = document.getElementById("ovbody");
+  if(kind === "book"){
+    body.innerHTML = '<canvas id="bcv" style="flex:1;background:#15150f;border:1px solid #2e2920;' +
+      'touch-action:none;cursor:crosshair"></canvas>' +
+      '<div style="color:#8a7f6a;font-size:11px;margin-top:8px">Draw freely. Nothing can edit your pages ' +
+      '&mdash; but the facility changes behind you.</div>';
+    setTimeout(initBook, 0);
+  } else if(kind === "code"){
+    body.innerHTML = '<div style="font-size:15px;color:#e8dcc4;line-height:2">' +
+      '<span style="color:#ffb545;letter-spacing:.12em">' + KW[curCell] + '</span> &nbsp;=&nbsp; ' +
+      '<b style="letter-spacing:.3em;font-size:22px">' + CODE[curCell] + '</b></div>' +
+      '<div style="color:#8a7f6a;font-size:12px;margin-top:14px">Write it down. Nothing else will remember ' +
+      'it for you, and this page can change once you leave.</div>';
+  } else {
+    renderRegister();
+  }
+}
+function closeOverlay(){
+  mode = "play";
+  hudVisible(true);
+  document.getElementById("overlay").style.display = "none";
+}
+
+function renderRegister(){
+  const body = document.getElementById("ovbody");
+  const cells = reg.map((b,i) =>
+    '<div data-i="'+i+'" style="width:44px;height:52px;border:1px solid #2e2920;background:#1d1a14;' +
+    'display:grid;place-items:center;font-size:20px;font-weight:700;cursor:pointer;color:#e8dcc4">'+b+'</div>').join("");
+  body.innerHTML =
+    '<div style="color:#8a7f6a;font-size:12px;margin-bottom:10px">Transmit ' +
+    '<span style="color:#ffb545;letter-spacing:.1em">' + KW[target] + '</span> &mdash; its codebook is in room <b>' +
+    GLYPH[target] + '</b>. Keys <b>1</b>&ndash;<b>8</b> flip a cell, <b>Enter</b> sends.</div>' +
+    '<div id="cells" style="display:flex;gap:6px">' + cells + '</div>' +
+    '<div id="regmsg" style="margin-top:14px;font-size:12px;color:#8a7f6a">' +
+    'Signals away: ' + sent + ' &nbsp;·&nbsp; corrupted: ' + corrupted + '</div>';
+  body.querySelectorAll("#cells div").forEach(el =>
+    el.addEventListener("click", () => { const i = +el.dataset.i;
+      reg[i] = reg[i]==="0"?"1":"0"; staged = true; renderRegister(); }));
+}
+function sendSignal(){
+  const truth = CODE[target];
+  if(reg.join("") === truth){
+    sent++; staged = false; reg = "00000000".split("");
+    aiSay("A signal left the facility. I could not stop it.");
+    msg = "SIGNAL ACCEPTED.";
+    const ks = Object.keys(CODE).map(Number);
+    target = ks[(ks.indexOf(target)+1) % ks.length];
+    if(sent >= 2) objective = 1;
+  } else {
+    corrupted++;
+    msg = "SIGNAL CORRUPTED \u2014 you sent " + reg.join("") + ", the facility reads " + truth + ".";
+    aiSay("Their signal came apart on the way out.");
+  }
+  renderRegister();
+}
+
+addEventListener("keydown", e => {
+  if(e.code === "Escape" && mode !== "play"){ closeOverlay(); e.preventDefault(); return; }
+  if(e.code === "Tab"){ e.preventDefault(); mode === "book" ? closeOverlay() : openOverlay("book"); return; }
+  if(mode === "reg"){
+    if(e.code.startsWith("Digit")){
+      const i = +e.code.slice(5) - 1;
+      if(i >= 0 && i < 8){ reg[i] = reg[i]==="0"?"1":"0"; staged = true; renderRegister(); }
+    }
+    if(e.code === "Enter") sendSignal();
+    return;
+  }
+  if(mode !== "play") return;
+  if(e.code === "KeyE"){
+    if(ROLE[curCell] === "codebook") openOverlay("code");
+    else if(ROLE[curCell] === "uplink") openOverlay("reg");
+  }
+  if(e.code === "KeyF"){
+    const d = nearestDoorway();
+    if(d && wired.has(sensorKey(d)) && !cutting){
+      cutting = { key: sensorKey(d), left: 3, cell: curCell };
+      msg = "Working on the sensor. Three windows, stood still.";
+    }
+  }
+});
+
+// ---------- the notebook, stroke-based ----------
+let pages = [[]], pg = 0, bctx = null, bcv = null, drawing = false, curStroke = null;
+function initBook(){
+  bcv = document.getElementById("bcv"); if(!bcv) return;
+  bctx = bcv.getContext("2d");
+  const r = bcv.getBoundingClientRect(), d = window.devicePixelRatio || 1;
+  bcv.width = Math.round(r.width*d); bcv.height = Math.round(r.height*d);
+  bctx.setTransform(d,0,0,d,0,0);
+  bdraw();
+  bcv.onpointerdown = e => { bcv.setPointerCapture(e.pointerId); drawing = true;
+    curStroke = {pts:[bpt(e)]}; pages[pg].push(curStroke); bdraw(); };
+  bcv.onpointermove = e => { if(!drawing) return; const p = bpt(e);
+    const l = curStroke.pts[curStroke.pts.length-1];
+    if(Math.hypot(p.x-l.x, p.y-l.y) < 1.2) return;
+    curStroke.pts.push(p); bdraw(); };
+  bcv.onpointerup = () => { drawing = false; curStroke = null; };
+}
+function bpt(e){ const r = bcv.getBoundingClientRect(); return {x:e.clientX-r.left, y:e.clientY-r.top}; }
+function bdraw(){
+  const w = bcv.clientWidth, h = bcv.clientHeight;
+  bctx.fillStyle = "#15150f"; bctx.fillRect(0,0,w,h);
+  bctx.strokeStyle = "#221f18"; bctx.lineWidth = 1; bctx.beginPath();
+  for(let x=26;x<w;x+=26){ bctx.moveTo(x+.5,0); bctx.lineTo(x+.5,h); }
+  for(let y=26;y<h;y+=26){ bctx.moveTo(0,y+.5); bctx.lineTo(w,y+.5); }
+  bctx.stroke();
+  bctx.strokeStyle = "#f0d9a8"; bctx.lineWidth = 2.2; bctx.lineCap = "round"; bctx.lineJoin = "round";
+  for(const st of pages[pg]){
+    if(st.pts.length < 2) continue;
+    bctx.beginPath(); bctx.moveTo(st.pts[0].x, st.pts[0].y);
+    for(let i=1;i<st.pts.length-1;i++){ const a=st.pts[i], b=st.pts[i+1];
+      bctx.quadraticCurveTo(a.x,a.y,(a.x+b.x)/2,(a.y+b.y)/2); }
+    bctx.lineTo(st.pts[st.pts.length-1].x, st.pts[st.pts.length-1].y); bctx.stroke();
+  }
 }
 
 // ---------------------------------------------------------------- camera
@@ -552,6 +749,7 @@ function look(dx, dy){
   cam.pitch = Math.max(-1.35, Math.min(1.35, cam.pitch));
 }
 addEventListener("mousemove", e => {
+  if(mode !== "play") return;
   if(locked) look(e.movementX || 0, e.movementY || 0);
   else if(dragging) look(e.movementX || 0, e.movementY || 0);
 });
@@ -569,13 +767,14 @@ let last = performance.now(), t = 0;
 function simulate(dt){
   t += dt;
 
+  const frozen = (mode !== "play");   // reading or writing: you stop, the clock does not
   const turn = 1.9 * dt;
-  if(keys.ArrowLeft)  cam.yaw += turn;
-  if(keys.ArrowRight) cam.yaw -= turn;
-  if(keys.ArrowUp)    cam.pitch = Math.min(1.35, cam.pitch + turn*0.7);
-  if(keys.ArrowDown)  cam.pitch = Math.max(-1.35, cam.pitch - turn*0.7);
+  if(!frozen && keys.ArrowLeft)  cam.yaw += turn;
+  if(!frozen && keys.ArrowRight) cam.yaw -= turn;
+  if(!frozen && keys.ArrowUp)    cam.pitch = Math.min(1.35, cam.pitch + turn*0.7);
+  if(!frozen && keys.ArrowDown)  cam.pitch = Math.max(-1.35, cam.pitch - turn*0.7);
 
-  const sp = (keys.ShiftLeft||keys.ShiftRight ? 4.4 : 2.3) * dt;
+  const sp = frozen ? 0 : (keys.ShiftLeft||keys.ShiftRight ? 4.4 : 2.3) * dt;
   const fx = Math.sin(cam.yaw), fz = Math.cos(cam.yaw);
   let dx=0, dz=0;
   if(keys.KeyW){ dx -= fx*sp; dz -= fz*sp; }
@@ -605,8 +804,12 @@ function simulate(dt){
   b3.style.width = Math.max(0, timer/tot*100) + "%";
   b3.style.background = phase==="open" ? "#5fd39a" : "#ffb545";
   document.getElementById("obj3").textContent =
-    (msg ? msg + "   ·   " : "") + "codebooks " + visited.size + "/3" +
-    (visited.size>=3 ? " — get to the uplink" : "") + (caught ? "   ·   taken " + caught + "x" : "");
+    (msg ? msg + "   ·   " : "") + "signals away " + sent + "/2" +
+    "   ·   need " + KW[target] + " from room " + GLYPH[target] +
+    (caught ? "   ·   taken " + caught + "x" : "");
+  const pr = document.getElementById("prompt");
+  const ptxt = currentPrompt();
+  pr.innerHTML = ptxt; pr.style.display = ptxt ? "block" : "none";
   document.getElementById("conf3").textContent = Math.round(beliefConf()*100) + "%";
   document.getElementById("map3").textContent =
     GLYPH[beliefMap()] + (beliefMap()===curCell ? " (right)" : " (wrong)");
@@ -686,6 +889,7 @@ if(_auto > 0){
   const T = { frames:0, crossAttempts:0, crossed:0, stuckFrames:0, windows:0,
               cellsSeen:new Set([curCell]), books:0, caught:0, missedWindows:0 };
   let lastCell = curCell, lastPhase = phase, stuck = 0, prevX = cam.x, prevZ = cam.z;
+  const TRACE = [];
   let windowHadAttempt = false;
 
   function pathNext(from, to){
@@ -698,12 +902,17 @@ if(_auto > 0){
     return from;
   }
   function goal(){
-    const books = CELLS.map((_,i)=>i).filter(i=>ROLE[i]==="codebook" && !visited.has(i));
-    if(visited.size < 3 && books.length) return books[0];
-    return 0;                                   // the uplink
+    // read the codebook you have been asked for, then take it to the uplink
+    if(!visited.has(target)) return target;
+    return CELLS.findIndex((_,i)=>ROLE[i]==="uplink");
   }
 
   for(let f=0; f<_auto && !objective; f++){
+    checkRoom();
+    // at the uplink with the codebook read: stage the byte and send it
+    if(ROLE[curCell] === "uplink" && CODE[target] && visited.has(target)){
+      reg = CODE[target].split(""); staged = true; sendSignal();
+    }
     const g = goal(), nxt = pathNext(curCell, g);
     const dw = nxt!==curCell ? doorBetween(curCell, nxt) : null;
     const aim = dw ? {x:dw.x, z:dw.z} : {x:CC[curCell].x, z:CC[curCell].z};
@@ -732,6 +941,12 @@ if(_auto > 0){
 
     if(curCell !== lastCell){ T.crossed++; T.cellsSeen.add(curCell); lastCell = curCell; }
     if(phase !== lastPhase){
+      if(lastPhase === "open" && TRACE.length < 14){
+        const gg = goal();
+        TRACE.push("w" + T.windows + " at" + curCell + " goal" + gg + " next" + pathNext(curCell, gg) +
+                   " dw" + (doorBetween(curCell, pathNext(curCell, gg)) ? "Y" : "N") +
+                   " d" + Math.round(Math.hypot(cam.x-CC[curCell].x, cam.z-CC[curCell].z)*10)/10);
+      }
       if(lastPhase === "open"){
         T.windows++;
         windowHadAttempt = false;
@@ -746,7 +961,11 @@ if(_auto > 0){
   el.textContent = JSON.stringify({
     frames:T.frames, windows:T.windows, doorAttempts:T.crossAttempts, doorsCrossed:T.crossed,
     stuckFrames:T.stuckFrames, cellsReached:T.cellsSeen.size,
-    codebooks:T.books, caught:T.caught, escaped:objective ? 1 : 0
+    codebooks:T.books, caught:T.caught, escaped:objective ? 1 : 0,
+    sent:sent, corrupted:corrupted, target:target, uplinkCell:CELLS.findIndex((_,i)=>ROLE[i]==="uplink"),
+    roles:ROLE.join(","), codeKeys:Object.keys(CODE).join(","), curCell:curCell, trace:TRACE.join(" | "),
+    adj:CELLS.map((_,i)=>i+":["+neighboursOf(i).join(" ")+"]").join("  "),
+    reach:(function(){const seen=new Set([0]),q=[0];while(q.length){for(const n of neighboursOf(q.pop()))if(!seen.has(n)){seen.add(n);q.push(n);}}return seen.size;})()
   });
   document.body.appendChild(el);
 }
@@ -763,10 +982,22 @@ if(_simN > 0){
       const nxt = opts[Math.floor(rr()*opts.length)];
       onEnterCell(curCell, nxt); curCell = nxt;
     }
+    checkRoom();                      // the harness bypasses simulate(), so do it here
+    if(ROLE[curCell] === "uplink" && CODE[target]){
+      reg = CODE[target].split(""); staged = true; sendSignal();
+    }
     resolveWindow();
   }
   cam.x = CC[curCell].x + 2.0; cam.z = CC[curCell].z + 1.6;
 }
+// ?ov=code|reg|book opens an overlay directly, for stills and for demoing
+const _ov = new URLSearchParams(location.search).get("ov");
+if(_ov){ if(_ov === "code"){ const c = CELLS.findIndex((_,i)=>ROLE[i]==="codebook");
+    curCell = c; cam.x = CC[c].x + 2.0; cam.z = CC[c].z + 1.6; }
+  if(_ov === "reg"){ const u = CELLS.findIndex((_,i)=>ROLE[i]==="uplink");
+    curCell = u; cam.x = CC[u].x + 2.0; cam.z = CC[u].z + 1.6; }
+  openOverlay(_ov); }
+
 // ?shot=1 drops the overlay for screenshots and stills
 if(new URLSearchParams(location.search).get("shot") === "1"){
   startEl.style.display = "none";
