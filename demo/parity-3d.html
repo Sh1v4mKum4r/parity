@@ -48,13 +48,28 @@
      font-family:var(--mono);font-size:13px;color:#e8dcc4;text-shadow:0 2px 6px #000;
      pointer-events:none;letter-spacing:.06em;display:none"></div>
 
-<div id="overlay" style="position:fixed;inset:0;background:#0b0a08;z-index:12;
-     display:none;flex-direction:column;padding:18px 20px;font-family:var(--mono)">
-  <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px">
-    <b id="ovtitle" style="color:#ffb545;letter-spacing:.18em;font-size:13px"></b>
-    <span style="color:#ff4d3d;font-size:11px">THE CLOCK IS STILL RUNNING &mdash; ESC to close</span>
+<div id="overlay" style="position:fixed;inset:0;background:rgba(6,5,4,.55);z-index:12;
+     display:none;align-items:center;justify-content:center;font-family:var(--mono)">
+  <div style="width:min(760px,82vw);height:min(520px,72vh);background:#0d0c0a;
+       border:1px solid #2e2920;box-shadow:0 18px 60px rgba(0,0,0,.7);
+       display:flex;flex-direction:column;padding:14px 16px">
+    <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px">
+      <b id="ovtitle" style="color:#ffb545;letter-spacing:.18em;font-size:13px"></b>
+      <span style="color:#ff4d3d;font-size:11px">THE CLOCK IS STILL RUNNING &mdash; ESC to close</span>
+    </div>
+    <div id="ovbody" style="flex:1;min-height:0;display:flex;flex-direction:column"></div>
   </div>
-  <div id="ovbody" style="flex:1;min-height:0;display:flex;flex-direction:column"></div>
+</div>
+
+<div id="dead" style="position:fixed;inset:0;background:rgba(6,5,4,.92);z-index:20;
+     display:none;align-items:center;justify-content:center;text-align:center;font-family:var(--mono)">
+  <div>
+    <div style="font-size:26px;letter-spacing:.28em;color:#ff4d3d;font-weight:700">IT FOUND YOU</div>
+    <p id="deadsub" style="color:#8a7f6a;max-width:46ch;line-height:1.8;margin:16px auto 0"></p>
+    <div style="margin-top:22px;color:#e8dcc4;font-size:12px;border:1px solid #2e2920;
+         padding:9px 14px;display:inline-block;letter-spacing:.12em;cursor:pointer" id="againbtn">
+      PRESS R TO GO BACK IN</div>
+  </div>
 </div>
 
 <div class="start" id="start"><div>
@@ -447,7 +462,7 @@ const CODE = {}, KW = {};
 })();
 let target = Object.keys(CODE).map(Number)[0] ?? 0;   // the keyword being asked for
 let reg = "00000000".split(""), staged = false, sent = 0, corrupted = 0;
-let mode = "play", cutting = null, prompt = "";
+let mode = "play", cutting = null, prompt = "", dead = false, T_WINDOWS = 0;
 
 function nearestCell(x,z){
   let best=0, bd=1e9;
@@ -606,20 +621,7 @@ function resolveWindow(){
   }
   searchSeen[entityCell] = performance.now();
   entityCell = bfsStep(entityCell, tgt);
-  if(entityCell === curCell){
-    caught++;
-    msg = "IT FOUND YOU. Again, then.";
-    // it takes you, and the facility puts you back somewhere else. Your pages
-    // survive; so does its model of you.
-    const far = CELLS.map((_,i)=>i)
-      .filter(i => i !== entityCell)
-      .sort((a,b) => Math.hypot(CC[b].x-CC[entityCell].x, CC[b].z-CC[entityCell].z)
-                   - Math.hypot(CC[a].x-CC[entityCell].x, CC[a].z-CC[entityCell].z));
-    curCell = far[0];
-    cam.x = CC[curCell].x + 2.0; cam.z = CC[curCell].z + 1.6;
-    belief = CELLS.map(()=>1/CELLS.length);
-    aiSay("I had you. The facility moved you. I will find you again.");
-  }
+  if(entityCell === curCell) die();
 }
 
 // ?diag=1 dumps GL state into the DOM so a headless browser can report it
@@ -645,6 +647,43 @@ if(new URLSearchParams(location.search).get("diag") === "1"){
   document.body.appendChild(el);
 }
 
+function die(){
+  if(dead) return;
+  dead = true; caught++;
+  closeOverlay();
+  aiSay("I had them. It took " + T_WINDOWS + " windows.");
+  document.getElementById("deadsub").textContent =
+    "It reached room " + GLYPH[curCell] + " before you did, on window " + T_WINDOWS + ". " +
+    (sent ? sent + (sent === 1 ? " signal" : " signals") + " got out before this one. " : "No signal got out. ") +
+    "Your pages survive. So does its model of you.";
+  document.getElementById("dead").style.display = "flex";
+  if(document.pointerLockElement) document.exitPointerLock();
+}
+
+function reenter(){
+  // the facility regenerates; the notebook and its model of you do not
+  dead = false;
+  document.getElementById("dead").style.display = "none";
+  buildSensors(0.6);
+  for(const k in CODE){
+    const i = +k;
+    CODE[i] = Array.from({length:8}, () => Math.random() < 0.5 ? "0" : "1").join("");
+  }
+  refreshReadouts();
+  visited.clear();
+  sent = 0; corrupted = 0; reg = "00000000".split(""); staged = false;
+  target = Object.keys(CODE).map(Number)[0];
+  belief = CELLS.map(()=>1/CELLS.length);
+  curCell = CELLS.findIndex((_,i)=>ROLE[i]==="uplink");
+  cam.x = CC[curCell].x + 2.0; cam.z = CC[curCell].z + 1.6;
+  entityCell = CELLS.map((_,i)=>i).filter(i=>i!==curCell)[0];
+  phase = "lock"; timer = LOCKDOWN; doorsOpen = false;
+  cutting = null; msg = ""; objective = 0;
+  aiSay("They are back inside. I remember how they move.");
+}
+addEventListener("keydown", e => { if(dead && e.code === "KeyR") reenter(); });
+document.getElementById("againbtn").addEventListener("click", reenter);
+
 // ---------------------------------------------------------------- interaction
 function nearestDoorway(){
   let best = null, bd = 3.2;
@@ -658,7 +697,7 @@ function nearestDoorway(){
 function sensorKey(d){ return d.a < d.b ? d.a+"-"+d.b : d.b+"-"+d.a; }
 
 function currentPrompt(){
-  if(mode !== "play") return "";
+  if(mode !== "play" || dead) return "";
   const r = ROLE[curCell];
   if(r === "codebook") return "E &mdash; read codebook " + GLYPH[curCell];
   if(r === "uplink")   return "E &mdash; the uplink";
@@ -670,10 +709,10 @@ function currentPrompt(){
 }
 
 function hudVisible(on){
-  ["hud2", "prompt"].forEach(id => {
-    const e = document.getElementById(id); if(e) e.style.visibility = on ? "visible" : "hidden";
-  });
-  document.querySelectorAll(".hud, .tag").forEach(e => e.style.visibility = on ? "visible" : "hidden");
+  // only the ground prompt hides; the clock stays up, because watching it run
+  // while you are mid-page is the whole tension of the notebook
+  const e = document.getElementById("prompt");
+  if(e) e.style.visibility = on ? "visible" : "hidden";
 }
 
 function openOverlay(kind){
@@ -861,7 +900,7 @@ let last = performance.now(), t = 0;
 function simulate(dt){
   t += dt;
 
-  const frozen = (mode !== "play");   // reading or writing: you stop, the clock does not
+  const frozen = (mode !== "play") || dead;   // reading or writing: you stop, the clock does not
   const turn = 1.9 * dt;
   if(!frozen && keys.ArrowLeft)  cam.yaw += turn;
   if(!frozen && keys.ArrowRight) cam.yaw -= turn;
@@ -882,11 +921,11 @@ function simulate(dt){
   const bobY = moving ? Math.sin(cam.bob)*0.035 : 0;
 
   // the facility breathes: sealed, then a short window when every door unlocks
-  if(!objective){
+  if(!objective && !dead){
     timer -= dt;
     if(timer <= 0){
       if(phase === "open"){ resolveWindow(); phase="lock"; timer=LOCKDOWN; doorsOpen=false; }
-      else { phase="open"; timer=WINDOW; doorsOpen=true; windowStartCell=curCell; }
+      else { phase="open"; timer=WINDOW; doorsOpen=true; windowStartCell=curCell; T_WINDOWS++; }
     }
   }
   checkRoom();
@@ -1022,6 +1061,7 @@ if(_auto > 0){
   }
 
   for(let f=0; f<_auto && !objective; f++){
+    if(dead){ T.caught = caught; reenter(); }   // a run ended; go back in and keep testing
     checkRoom();
     // at the uplink with the codebook read: stage the byte and send it
     if(ROLE[curCell] === "uplink" && CODE[target] && visited.has(target)){
@@ -1112,6 +1152,13 @@ if(new URLSearchParams(location.search).has("ent")){
   cam.x = c.x - 1.5 + 2.6; cam.z = c.z - 1.2 + 2.6; cam.y = 1.62;
   cam.yaw = Math.atan2(-(c.x - 1.5 - cam.x), -(c.z - 1.2 - cam.z));
   cam.pitch = 0.12;
+}
+
+// ?die=1 triggers the end-of-run screen, for stills
+if(new URLSearchParams(location.search).has("die")){
+  startEl.style.display = "none";
+  T_WINDOWS = 17; sent = 1;
+  setTimeout(die, 0);
 }
 
 // ?peek=1 stands you in a codebook room, facing its panel

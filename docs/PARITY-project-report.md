@@ -559,8 +559,13 @@ the information is in the world rather than behind a keypress. When the Director
 poisons a codebook the player has already copied, **that panel changes** — silently,
 while they are in another room. The notebook they wrote it into does not.
 
-Overlays freeze movement but **not** the clock, which is the whole tension of the
-notebook: every page costs you windows. While a staged byte is on the register and
+Overlays are a panel rather than a full screen, so the clock stays visible behind
+them. That is deliberate: they freeze movement but **not** time, and watching the
+window tick down while you are mid-page is the whole tension of the notebook.
+
+Being caught **ends the run**. The facility regenerates and the codes change, but the
+player's notebook persists — and so does the antagonist's model of them, which is
+the point: the second run starts with it already knowing how you move. While a staged byte is on the register and
 the player is away from the uplink, the Director may flip one of its cells, and says
 so only in the AI view. The objective is two uncorrupted signals.
 

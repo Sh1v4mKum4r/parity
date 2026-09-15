@@ -11,7 +11,7 @@ and explains its own reasoning on screen.
 
 | File | What it is |
 |---|---|
-| `demo/parity-3d.html` | **The game.** First person, WASD. Codebook rooms show their keyword and bits on a lit panel; `E` reads it close up, or works the uplink · `TAB` notebook · `F` cut a door sensor · `1`–`8` and `ENTER` stage and send the byte. Two uncorrupted signals to win. |
+| `demo/parity-3d.html` | **The game.** First person, WASD. Codebook rooms show their keyword and bits on a lit panel; `E` reads it close up, or works the uplink · `TAB` notebook · `F` cut a door sensor · `1`–`8` and `ENTER` stage and send the byte. Two uncorrupted signals to win; being caught ends the run, but your notebook and its model of you both carry over. |
 | `demo/parity-game.html` | **Systems view.** The same AI with its belief drawn on the map, wired vs dead doors, and a sensor you can cut. |
 | `demo/parity-notebook.html` | Freehand notebook — stroke-based, Excalidraw-style erase, pages. |
 | `demo/parity-room.html` | Art-direction study for the 3D layer. |
