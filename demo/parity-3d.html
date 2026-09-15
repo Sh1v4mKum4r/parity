@@ -152,6 +152,36 @@ function tri(a,b,c,s,forceN){
   for(const p of [a,b,c]){ pos.push(p[0],p[1],p[2]); nrm.push(n[0],n[1],n[2]); shade.push(s); }
 }
 function quad(a,b,c,d,s){ tri(a,b,c,s); tri(a,c,d,s); }
+function quadN(a,b,c,d,s,n){ tri(a,b,c,s,n); tri(a,c,d,s,n); }
+
+// Shade is clamped below 1: at or above it the fragment shader reads the surface
+// as self-lit, so a careless highlight would turn a crate into a lamp.
+const S = v => Math.min(v, 0.99);
+function box(cx,cy,cz,hx,hy,hz,s){
+  const x0=cx-hx,x1=cx+hx, y0=cy-hy,y1=cy+hy, z0=cz-hz,z1=cz+hz;
+  quadN([x0,y1,z0],[x0,y1,z1],[x1,y1,z1],[x1,y1,z0], S(s*1.12), [0,1,0]);
+  quadN([x0,y0,z0],[x1,y0,z0],[x1,y0,z1],[x0,y0,z1], S(s*0.55), [0,-1,0]);
+  quadN([x0,y0,z1],[x1,y0,z1],[x1,y1,z1],[x0,y1,z1], S(s),      [0,0,1]);
+  quadN([x1,y0,z0],[x0,y0,z0],[x0,y1,z0],[x1,y1,z0], S(s),      [0,0,-1]);
+  quadN([x1,y0,z1],[x1,y0,z0],[x1,y1,z0],[x1,y1,z1], S(s*0.9),  [1,0,0]);
+  quadN([x0,y0,z0],[x0,y0,z1],[x0,y1,z1],[x0,y1,z0], S(s*0.9),  [-1,0,0]);
+}
+// a proud band running the length of a solid wall: skirting, or a rib at chest height
+function ledge(cx,cz,a,b,y0,y1,dep,s){
+  const mx=(a[0]+b[0])/2, mz=(a[2]+b[2])/2;
+  let ix=cx-mx, iz=cz-mz; const il=Math.hypot(ix,iz); ix/=il; iz/=il;
+  const A=[a[0]+ix*dep, 0, a[2]+iz*dep], B=[b[0]+ix*dep, 0, b[2]+iz*dep];
+  quadN([A[0],y0,A[2]],[B[0],y0,B[2]],[B[0],y1,B[2]],[A[0],y1,A[2]], S(s),      [ix,0,iz]);
+  quadN([A[0],y1,A[2]],[B[0],y1,B[2]],[b[0],y1,b[2]],[a[0],y1,a[2]], S(s*1.15), [0,1,0]);
+  quadN([a[0],y0,a[2]],[b[0],y0,b[2]],[B[0],y0,B[2]],[A[0],y0,A[2]], S(s*0.6),  [0,-1,0]);
+}
+// props sit out at the corners, past the radius the player is allowed to walk to,
+// so the room reads as furnished without anything to clip through
+function atCorner(cx,cz,i,rad){
+  const ang = Math.PI/180*(60*i - 30);
+  return [cx + rad*Math.cos(ang), cz + rad*Math.sin(ang)];
+}
+const roleOf = i => i===0 ? "uplink" : (i%3===1 ? "codebook" : "plain");
 
 function corner(cx,cz,i){
   const ang = Math.PI/180*(60*i - 30);
@@ -213,7 +243,14 @@ for(const [q,r] of CELLS){
       const len=Math.hypot(dx,dz), ux=dx/len, uz=dz/len;
       const hw=DOOR_W/2;
       const l1=[mx-ux*hw, 0, mz-uz*hw], r1=[mx+ux*hw, 0, mz+uz*hw];
-      DOORWAYS.push({ a: me, b: other, x: mx, z: mz, ux, uz });
+      // the motion detector over the door, on the side facing into this room.
+      // Its lamp is drawn separately each frame, and only while the sensor lives.
+      let iw = cx-mx, iz2 = cz-mz; const iwl = Math.hypot(iw,iz2); iw/=iwl; iz2/=iwl;
+      const hx2 = mx + iw*0.30, hz2 = mz + iz2*0.30, ly = DOOR_H + 0.30;
+      box(hx2, ly, hz2, 0.17, 0.11, 0.11, 0.33);
+      // the lamp sits proud of the housing, or it is simply buried inside it
+      const lx = mx + iw*0.46, lz = mz + iz2*0.46;
+      DOORWAYS.push({ a: me, b: other, x: mx, z: mz, ux, uz, lx, ly, lz });
       quad([a[0],0,a[2]], l1, [l1[0],H,l1[2]], [a[0],H,a[2]], 0.52);
       quad(r1, [b[0],0,b[2]], [b[0],H,b[2]], [r1[0],H,r1[2]], 0.52);
       quad([l1[0],DOOR_H,l1[2]], [r1[0],DOOR_H,r1[2]], [r1[0],H,r1[2]], [l1[0],H,l1[2]], 0.46);
@@ -223,6 +260,46 @@ for(const [q,r] of CELLS){
       quad([r1[0]-uz*jd,0,r1[2]+ux*jd], [r1[0],0,r1[2]], [r1[0],DOOR_H,r1[2]], [r1[0]-uz*jd,DOOR_H,r1[2]+ux*jd], 0.62);
     }
   }
+  // ---- dressing: pilasters, ribs, a fixture, and something that says what the
+  // room is for. All of it static geometry baked into the one scene buffer.
+  for(let i=0;i<6;i++){
+    const [px,pz] = atCorner(cx,cz,i,R*0.98);
+    box(px, H/2, pz, 0.15, H/2, 0.15, 0.42);
+    box(px, H-0.13, pz, 0.21, 0.13, 0.21, 0.37);
+  }
+  for(let i=0;i<6;i++){
+    const nb = NB[i];
+    if(cellIndex(q+nb[0], r+nb[1]) >= 0 && hasDoor(me, cellIndex(q+nb[0], r+nb[1]))) continue;
+    const a = corner(cx,cz,i), b = corner(cx,cz,(i+1)%6);
+    ledge(cx,cz,a,b, 0.0,  0.26, 0.07, 0.40);   // skirting
+    ledge(cx,cz,a,b, 1.44, 1.56, 0.05, 0.47);   // rib
+  }
+  // the fixture: a housing, and under it the strip that is actually alight
+  box(cx, H-0.12, cz, 0.62, 0.12, 0.20, 0.34);
+  box(cx, H-0.26, cz, 0.46, 0.03, 0.10, 1.22);
+  // conduit crossing the ceiling
+  box(cx, H-0.30, cz-2.4, 2.2, 0.06, 0.06, 0.34);
+  box(cx, H-0.30, cz+2.4, 2.2, 0.06, 0.06, 0.34);
+
+  const role = roleOf(me);
+  if(role === "uplink"){
+    const [mx,mz] = atCorner(cx,cz,2,R*0.97);
+    box(mx, 0.58, mz, 0.54, 0.58, 0.26, 0.40);        // transmitter cabinet
+    box(mx, 1.95, mz, 0.05, 0.75, 0.05, 0.46);        // mast up the wall
+    box(mx, 2.58, mz, 0.42, 0.04, 0.04, 0.46);        // crossbars
+    box(mx, 2.30, mz, 0.28, 0.04, 0.04, 0.46);
+  } else if(role === "codebook"){
+    const [dx0,dz0] = atCorner(cx,cz,4,R*0.95);
+    box(dx0, 0.70, dz0, 0.80, 0.04, 0.32, 0.46);      // desk top
+    box(dx0-0.70, 0.35, dz0, 0.05, 0.35, 0.26, 0.36); // legs
+    box(dx0+0.70, 0.35, dz0, 0.05, 0.35, 0.26, 0.36);
+    box(dx0-0.26, 0.77, dz0, 0.22, 0.03, 0.15, 0.66); // paper left on it
+  } else {
+    const [k1,k2] = atCorner(cx,cz,3,R*0.95);
+    box(k1, 0.38, k2, 0.42, 0.38, 0.38, 0.40);        // crates
+    box(k1+0.20, 1.00, k2-0.14, 0.27, 0.24, 0.27, 0.44);
+  }
+
   // a low plinth in the middle of each cell -- a console you can read
   const s=0.85, hgt=0.62;
   const c=[cx,0,cz];
@@ -417,6 +494,28 @@ attrib(scene, "aPos", ep, 3);
 attrib(scene, "aNrm", en, 3);
 attrib(scene, "aShade", es, 1);
 const ECOUNT = ep.length/3;
+
+// The sensor lamp: one small emissive cube, drawn once per doorway whose
+// detector is still wired. Cutting one simply stops it being drawn, so the
+// facility shows you what it can and cannot hear.
+const lvao = gl.createVertexArray(); gl.bindVertexArray(lvao);
+const lp=[], ln=[], ls=[];
+(function buildLamp(){
+  const h = 0.055, y = 0.0;
+  const f = (a,b,c,d,n) => { for(const v of [a,b,c,a,c,d]){
+    lp.push(v[0],v[1],v[2]); ln.push(n[0],n[1],n[2]); ls.push(1.95); } };
+  const x0=-h,x1=h,y0=y-h,y1=y+h,z0=-h,z1=h;
+  f([x0,y1,z0],[x0,y1,z1],[x1,y1,z1],[x1,y1,z0],[0,1,0]);
+  f([x0,y0,z0],[x1,y0,z0],[x1,y0,z1],[x0,y0,z1],[0,-1,0]);
+  f([x0,y0,z1],[x1,y0,z1],[x1,y1,z1],[x0,y1,z1],[0,0,1]);
+  f([x1,y0,z0],[x0,y0,z0],[x0,y1,z0],[x1,y1,z0],[0,0,-1]);
+  f([x1,y0,z1],[x1,y0,z0],[x1,y1,z0],[x1,y1,z1],[1,0,0]);
+  f([x0,y0,z0],[x0,y0,z1],[x0,y1,z1],[x0,y1,z0],[-1,0,0]);
+})();
+attrib(scene, "aPos", lp, 3);
+attrib(scene, "aNrm", ln, 3);
+attrib(scene, "aShade", ls, 1);
+const LCOUNT = lp.length/3;
 gl.bindVertexArray(null);
 
 const qvao = gl.createVertexArray(); gl.bindVertexArray(qvao);
@@ -466,7 +565,7 @@ DOORWAYS.forEach((d,i) => { if(i % 3 !== 0) wired.add(d.a+"-"+d.b); });
 const isWired = (a,b) => wired.has(a+"-"+b) || wired.has(b+"-"+a);
 
 // role of each cell: codebooks to read, one uplink to transmit from
-const ROLE = CELLS.map((_,i) => i===0 ? "uplink" : (i%3===1 ? "codebook" : "plain"));
+const ROLE = CELLS.map((_,i) => roleOf(i));
 const KEYWORDS = ["HELP US","WARNING","MAYDAY","ALERT","CODE RED"];
 const CODE = {}, KW = {};
 (function fillCodebooks(){
@@ -566,6 +665,13 @@ function predictFrom(room){
 }
 
 let windowStartCell = 0, searchSeen = {}, grace = 0;
+// A prequential scoreboard: every prediction is scored against what the player
+// actually did next, before the model is told the answer. These carry across
+// re-entries, because the model does.
+const SCORE = { predN:0, predHit:0, baseSum:0, confSum:0, confN:0,
+                streak:0, bestStreak:0, locN:0, locHit:0,
+                poisons:0, flips:0, silent:0 };
+let lastPred = null;
 function checkRoom(){
   // Being in the room is what records it. Doing this on doorway-crossing only
   // meant a respawn could drop you inside a codebook room that never registered.
@@ -612,9 +718,25 @@ function resolveWindow(){
   const conf = beliefConf(), mp = beliefMap();
   if(ev) aiSay("A sensor tripped between <b style='color:#ffb545'>" + GLYPH[ev[0]] + "</b> and <b style='color:#ffb545'>" + GLYPH[ev[1]] + "</b>. You are in " + GLYPH[mp] + ".");
   else if(!moved) aiSay("Nothing tripped. You held position, or used a door I cannot hear. " + Math.round(conf*100) + "% sure.");
-  else aiSay("Nothing tripped, but you moved. An unwired door. Down to " + Math.round(conf*100) + "%.");
+  else { SCORE.silent++; aiSay("Nothing tripped, but you moved. An unwired door. Down to " + Math.round(conf*100) + "%."); }
+
+  // score the call it made last step against where they actually turned up
+  if(lastPred !== null){
+    SCORE.predN++;
+    SCORE.baseSum += 1 / (neighboursOf(windowStartCell).length + 1);
+    if(lastPred === curCell){
+      SCORE.predHit++; SCORE.streak++;
+      SCORE.bestStreak = Math.max(SCORE.bestStreak, SCORE.streak);
+    } else SCORE.streak = 0;
+  }
+  SCORE.locN++; if(mp === curCell) SCORE.locHit++;
 
   learn(mp);
+  // predicted every step for the record, even when it is too unsure to act on it:
+  // the model's accuracy is a property of the model, not of the policy
+  const fore = predictFrom(mp);
+  lastPred = fore.best;
+
   let tgt;
   if(grace > 0){
     grace--;
@@ -622,9 +744,9 @@ function resolveWindow(){
     tgt = away.length ? away[Math.floor(Math.random()*away.length)] : entityCell;
     aiSay("The building is not the shape it was. Listening before I move on them.");
   } else if(conf >= 0.4){
-    const pr = predictFrom(mp);
-    tgt = pr.best;
-    aiSay("I expect you " + (pr.best===mp ? "to stay" : "in " + GLYPH[pr.best]) + " (" + Math.round(pr.p*100) + "%). Moving to intercept.");
+    tgt = fore.best;
+    SCORE.confSum += fore.p; SCORE.confN++;
+    aiSay("I expect you " + (fore.best===mp ? "to stay" : "in " + GLYPH[fore.best]) + " (" + Math.round(fore.p*100) + "%). Moving to intercept.");
   } else {
     let oldest=[], ot=Infinity;
     CELLS.forEach((_,i)=>{ const t = searchSeen[i] ?? -1;
@@ -651,6 +773,7 @@ function resolveWindow(){
       CODE[r] = CODE[r].substring(0,b) + (CODE[r][b]==="0"?"1":"0") + CODE[r].substring(b+1);
       if(READOUT[r]){ gl.deleteTexture(READOUT[r]); }
       READOUT[r] = makeReadout(KW[r], CODE[r], GLYPH[r]);
+      SCORE.poisons++;
       aiSay("Codebook <b style='color:#ffb545'>" + GLYPH[r] + "</b> now reads differently. They copied it, and they are not there.");
     }
   }
@@ -659,6 +782,7 @@ function resolveWindow(){
   if(staged && ROLE[curCell] !== "uplink" && conf >= 0.4 && Math.random() < 0.5){
     const i = Math.floor(Math.random()*8);
     reg[i] = reg[i]==="0" ? "1" : "0";
+    SCORE.flips++;
     aiSay("You are not at the uplink. I turned over one of the cells you staged.");
   }
   searchSeen[entityCell] = performance.now();
@@ -1071,6 +1195,15 @@ function frame(now){
   gl.uniform1f(gl.getUniformLocation(scene,"uYaw"), 0);
   gl.bindVertexArray(vao);
   gl.drawArrays(gl.TRIANGLES, 0, VCOUNT);
+
+  // live sensors, one draw each; a cut one is simply absent
+  gl.uniform1f(gl.getUniformLocation(scene,"uYaw"), 0);
+  gl.bindVertexArray(lvao);
+  for(const d of DOORWAYS){
+    if(!isWired(d.a, d.b)) continue;
+    gl.uniform3f(gl.getUniformLocation(scene,"uOffset"), d.lx, d.ly, d.lz);
+    gl.drawArrays(gl.TRIANGLES, 0, LCOUNT);
+  }
 
   const ec = CC[entityCell];
   const ex = ec.x - 1.5, ez = ec.z - 1.2;

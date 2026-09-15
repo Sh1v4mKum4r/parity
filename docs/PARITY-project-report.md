@@ -573,6 +573,19 @@ Being caught **ends the run**. The facility regenerates and the codes change, bu
 player's notebook persists — and so does the antagonist's model of them, which is
 the point: the second run starts with it already knowing how you move.
 
+Each room is dressed from the same static buffer as its walls: corner pilasters,
+a skirting and a chest-height rib on every solid side, a ceiling fixture with a
+self-lit strip, conduit crossing overhead, and a prop that says what the room is
+for — a transmitter cabinet and wall mast at the uplink, a desk and a left page in
+a codebook room, stacked crates elsewhere. Props sit past the radius the player is
+allowed to walk to, so the rooms read as furnished without anything to clip through.
+
+Every doorway carries a motion detector, modelled as a housing with a lamp proud
+of it. The lamp is drawn once per frame per doorway and **only while that sensor is
+still wired**, so cutting one visibly puts it out. This matters beyond decoration:
+the sensor network is what the belief filter reads, and before this the player had
+no way to see which doors the antagonist could hear.
+
 **Step mode** (`P`, or `?demo=1`) detaches the door clock. Every door stands open,
 time does not pass, and the entity takes exactly one turn each time the player
 enters a room. The model, the filter and the sabotage rules are identical — only
