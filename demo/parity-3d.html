@@ -28,10 +28,8 @@
 <div id="hud2" style="position:fixed;right:16px;top:14px;width:330px;font-size:11px;
      color:#b3a68c;text-shadow:0 1px 3px #000;pointer-events:none;letter-spacing:.02em">
   <div style="border:1px solid #2e2920;background:rgba(20,18,14,.82);padding:8px 10px;margin-bottom:8px">
-    <div style="display:flex;justify-content:space-between;align-items:center">
-      <b id="phase3" style="color:#8a7f6a;letter-spacing:.16em;font-size:12px">LOCKDOWN</b>
-      <span id="obj3" style="color:#ffb545"></span>
-    </div>
+    <b id="phase3" style="color:#8a7f6a;letter-spacing:.16em;font-size:12px">LOCKDOWN</b>
+    <div id="obj3" style="color:#ffb545;margin-top:4px;line-height:1.45"></div>
     <div style="height:6px;background:#1d1a14;border:1px solid #2e2920;margin-top:6px">
       <i id="bar3" style="display:block;height:100%;background:#ffb545;width:100%"></i>
     </div>
@@ -223,9 +221,16 @@ function prog(vs, fs){
 
 const scene = prog(`#version 300 es
 in vec3 aPos; in vec3 aNrm; in float aShade;
-uniform mat4 uVP; uniform vec3 uOffset;
+uniform mat4 uVP; uniform vec3 uOffset; uniform float uYaw;
 out vec3 vPos; out vec3 vNrm; out float vShade;
-void main(){ vec3 w = aPos + uOffset; vPos=w; vNrm=aNrm; vShade=aShade; gl_Position = uVP * vec4(w,1.0); }`,
+void main(){
+  float c = cos(uYaw), s = sin(uYaw);
+  vec3 r = vec3(aPos.x*c + aPos.z*s, aPos.y, -aPos.x*s + aPos.z*c);
+  vec3 n = vec3(aNrm.x*c + aNrm.z*s, aNrm.y, -aNrm.x*s + aNrm.z*c);
+  vec3 w = r + uOffset;
+  vPos=w; vNrm=n; vShade=aShade;
+  gl_Position = uVP * vec4(w,1.0);
+}`,
 `#version 300 es
 precision highp float;
 in vec3 vPos; in vec3 vNrm; in float vShade;
@@ -245,11 +250,14 @@ void main(){
   float spill = smoothstep(0.05, 0.75, cone) * atten * lambert * 0.85;  // torches spill
   float lit = spot * atten * lambert * 3.2 + spill;
   float ambient = 0.055 + 0.040 * lambert;      // enough to read on a projector
-  vec3 concrete = vec3(0.74, 0.72, 0.68) * vShade;
-  vec3 col = concrete * (lit + ambient);
+  // shade above 1 marks a self-lit surface: the only thing in here that glows
+  float emis = max(vShade - 1.0, 0.0);
+  float isEm = step(0.0001, emis);              // an emissive surface takes no torchlight
+  vec3 concrete = vec3(0.74, 0.72, 0.68) * min(vShade, 1.0) * (1.0 - isEm);
+  vec3 col = concrete * (lit + ambient) + vec3(1.0, 0.10, 0.06) * emis * 3.4;
   col += vec3(1.0, 0.86, 0.62) * lit * 0.16;    // warm tungsten bias
   float fog = 1.0 - exp(-dist * 0.072);
-  col = mix(col, vec3(0.020, 0.019, 0.017), fog);
+  col = mix(col, vec3(0.020, 0.019, 0.017), fog * (1.0 - min(emis, 0.75)));
   frag = vec4(col, 1.0);
 }`);
 
@@ -279,6 +287,62 @@ void main(){
   frag = vec4(c, 1.0);
 }`);
 
+// ---------- in-world codebook readouts ----------
+// The code lives on a lit panel in the room, not behind a keypress. It is drawn as
+// a texture so it can be read at a glance, and it is self-lit because a torch-lit
+// scene makes unlit text unreadable.
+const texProg = prog(`#version 300 es
+in vec3 aPos; in vec2 aUV;
+uniform mat4 uVP; uniform vec3 uOffset; uniform float uYaw;
+out vec2 vUV;
+void main(){
+  float c = cos(uYaw), s = sin(uYaw);
+  vec3 r = vec3(aPos.x*c + aPos.z*s, aPos.y, -aPos.x*s + aPos.z*c);
+  vUV = aUV;
+  gl_Position = uVP * vec4(r + uOffset, 1.0);
+}`,
+`#version 300 es
+precision highp float;
+in vec2 vUV; uniform sampler2D uTex; out vec4 frag;
+void main(){
+  vec4 t = texture(uTex, vUV);
+  if(t.a < 0.02) discard;
+  frag = vec4(t.rgb, 1.0);
+}`);
+
+function makeReadout(kw, code, glyph){
+  const c = document.createElement("canvas");
+  c.width = 512; c.height = 256;
+  const x = c.getContext("2d");
+  x.fillStyle = "#0d1410"; x.fillRect(0,0,512,256);
+  x.strokeStyle = "#1f3a2c"; x.lineWidth = 6; x.strokeRect(3,3,506,250);
+  x.fillStyle = "#4b7a62"; x.font = "600 26px ui-monospace, monospace";
+  x.fillText("CODEBOOK " + glyph, 26, 50);
+  x.fillStyle = "#ffb545"; x.font = "700 40px ui-monospace, monospace";
+  x.fillText(kw, 26, 108);
+  x.fillStyle = "#cfe9d8"; x.font = "700 56px ui-monospace, monospace";
+  x.letterSpacing = "10px";
+  x.fillText(code, 26, 186);
+  x.fillStyle = "#4b7a62"; x.font = "400 19px ui-monospace, monospace";
+  x.fillText("write it down \u2014 this panel can change", 26, 226);
+  const t = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, t);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, c);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  return t;
+}
+const READOUT = {};
+function refreshReadouts(){
+  for(const k in CODE){
+    const i = +k;
+    if(READOUT[i]) gl.deleteTexture(READOUT[i]);
+    READOUT[i] = makeReadout(KW[i], CODE[i], GLYPH[i]);
+  }
+}
+
 // ---------------------------------------------------------------- buffers
 const vao = gl.createVertexArray(); gl.bindVertexArray(vao);
 function attrib(p, name, data, size){
@@ -298,7 +362,9 @@ const VCOUNT = pos.length/3;
 const evao = gl.createVertexArray(); gl.bindVertexArray(evao);
 const ep=[], en=[], es=[];
 (function buildEntity(){
-  const w=0.34, h=2.05, d=0.20;
+  // A tall, thin, wrong-proportioned figure. Deliberately crude — this is a
+  // placeholder for a modelled character, but it reads as a person at a glance
+  // and the eye gives it a direction to be facing.
   const box=(x0,y0,z0,x1,y1,z1,sh)=>{
     const P=[[x0,y0,z0],[x1,y0,z0],[x1,y1,z0],[x0,y1,z0],[x0,y0,z1],[x1,y0,z1],[x1,y1,z1],[x0,y1,z1]];
     const F=[[0,1,2,3],[5,4,7,6],[4,0,3,7],[1,5,6,2],[3,2,6,7],[4,5,1,0]];
@@ -309,8 +375,14 @@ const ep=[], en=[], es=[];
       }));
     });
   };
-  box(-w,0,-d, w,h,d, 0.30);            // body
-  box(-w*0.55,h,-d*0.8, w*0.55,h+0.30,d*0.8, 0.22);   // head
+  const D = 0.30;                                  // it faces -Z
+  box(-0.17, 0.92, -0.10,  0.17, 2.02, 0.10, 0.34);   // torso, narrow and long
+  box(-0.13, 2.02, -0.11,  0.13, 2.34, 0.11, 0.26);   // head
+  box(-0.075, 2.13, -0.14,  0.075, 2.22, -0.11, 2.1); // the eye: self-lit, carries in the dark
+  box(-0.235, 1.06, -0.06, -0.17, 1.92, 0.06, 0.30);  // left arm
+  box( 0.17,  1.06, -0.06,  0.235, 1.92, 0.06, 0.30); // right arm
+  box(-0.145, 0.00, -0.07, -0.02, 0.94, 0.07, 0.28);  // left leg
+  box( 0.02,  0.00, -0.07,  0.145, 0.94, 0.07, 0.28); // right leg
 })();
 attrib(scene, "aPos", ep, 3);
 attrib(scene, "aNrm", en, 3);
@@ -320,6 +392,14 @@ gl.bindVertexArray(null);
 
 const qvao = gl.createVertexArray(); gl.bindVertexArray(qvao);
 attrib(post, "aP", [-1,-1, 3,-1, -1,3], 2);
+gl.bindVertexArray(null);
+
+const qw = 1.30, qh = 0.65, qy = 1.30;     // panel size and height off the floor
+const tvao = gl.createVertexArray(); gl.bindVertexArray(tvao);
+attrib(texProg, "aPos", [
+  -qw, qy-qh, 0,  qw, qy-qh, 0,  qw, qy+qh, 0,
+  -qw, qy-qh, 0,  qw, qy+qh, 0, -qw, qy+qh, 0], 3);
+attrib(texProg, "aUV", [0,1, 1,1, 1,0, 0,1, 1,0, 0,0], 2);
 gl.bindVertexArray(null);
 
 // low-res render target: the resolution IS the art direction
@@ -504,6 +584,20 @@ function resolveWindow(){
       cutting = null;
     }
   }
+  // and it poisons a page you have already copied, while you are elsewhere.
+  // The panel in that room changes; you are told nothing.
+  if(conf >= 0.4 && Math.random() < 0.28){
+    const far = Object.keys(CODE).map(Number).filter(i => i !== curCell && visited.has(i));
+    if(far.length){
+      const r = far[Math.floor(Math.random()*far.length)];
+      const b = Math.floor(Math.random()*8);
+      CODE[r] = CODE[r].substring(0,b) + (CODE[r][b]==="0"?"1":"0") + CODE[r].substring(b+1);
+      if(READOUT[r]){ gl.deleteTexture(READOUT[r]); }
+      READOUT[r] = makeReadout(KW[r], CODE[r], GLYPH[r]);
+      aiSay("Codebook <b style='color:#ffb545'>" + GLYPH[r] + "</b> now reads differently. They copied it, and they are not there.");
+    }
+  }
+
   // it edits what you cannot see: a staged byte while you are away from the uplink
   if(staged && ROLE[curCell] !== "uplink" && conf >= 0.4 && Math.random() < 0.5){
     const i = Math.floor(Math.random()*8);
@@ -839,13 +933,32 @@ function frame(now){
   gl.uniform3fv(gl.getUniformLocation(scene,"uEye"), new Float32Array(eye));
   gl.uniform3fv(gl.getUniformLocation(scene,"uDir"), new Float32Array(dir));
   gl.uniform3f(gl.getUniformLocation(scene,"uOffset"), 0, 0, 0);
+  gl.uniform1f(gl.getUniformLocation(scene,"uYaw"), 0);
   gl.bindVertexArray(vao);
   gl.drawArrays(gl.TRIANGLES, 0, VCOUNT);
 
   const ec = CC[entityCell];
-  gl.uniform3f(gl.getUniformLocation(scene,"uOffset"), ec.x - 1.5, 0, ec.z - 1.2);
+  const ex = ec.x - 1.5, ez = ec.z - 1.2;
+  gl.uniform3f(gl.getUniformLocation(scene,"uOffset"), ex, 0, ez);
+  // the model faces -Z, so turning it to look at you is atan2(-dx, -dz)
+  gl.uniform1f(gl.getUniformLocation(scene,"uYaw"), Math.atan2(ex - cam.x, ez - cam.z));
   gl.bindVertexArray(evao);
   gl.drawArrays(gl.TRIANGLES, 0, ECOUNT);
+
+  // the codebook panels, turned to face the reader
+  gl.useProgram(texProg);
+  gl.uniformMatrix4fv(gl.getUniformLocation(texProg,"uVP"), false, new Float32Array(VP));
+  gl.uniform1i(gl.getUniformLocation(texProg,"uTex"), 0);
+  gl.bindVertexArray(tvao);
+  for(const k in READOUT){
+    const i = +k, c = CC[i];
+    gl.uniform3f(gl.getUniformLocation(texProg,"uOffset"), c.x, 0, c.z);
+    // the quad faces +Z, so it is the opposite sign to the entity
+    gl.uniform1f(gl.getUniformLocation(texProg,"uYaw"), Math.atan2(cam.x - c.x, cam.z - c.z));
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, READOUT[i]);
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+  }
+  gl.useProgram(scene);
 
   if(NOPOST){ const dg0 = document.getElementById("gldiag");
     if(dg0){ FRAMES++; dg0.textContent = DIAG + "\nFRAMES:  " + FRAMES + "  (post bypassed)"; }
@@ -874,6 +987,7 @@ function frame(now){
           "\nCANVAS:  " + cv.width + "x" + cv.height + " (client " + cv.clientWidth + "x" + cv.clientHeight + ")"; }
   requestAnimationFrame(frame);
 }
+refreshReadouts();
 requestAnimationFrame(frame);
 
 // ?warm=N draws N frames synchronously before the first paint. Headless Firefox
@@ -990,6 +1104,26 @@ if(_simN > 0){
   }
   cam.x = CC[curCell].x + 2.0; cam.z = CC[curCell].z + 1.6;
 }
+// ?ent=1 stands you in front of it, for stills
+if(new URLSearchParams(location.search).has("ent")){
+  startEl.style.display = "none";
+  curCell = entityCell;
+  const c = CC[entityCell];
+  cam.x = c.x - 1.5 + 2.6; cam.z = c.z - 1.2 + 2.6; cam.y = 1.62;
+  cam.yaw = Math.atan2(-(c.x - 1.5 - cam.x), -(c.z - 1.2 - cam.z));
+  cam.pitch = 0.12;
+}
+
+// ?peek=1 stands you in a codebook room, facing its panel
+if(new URLSearchParams(location.search).has("peek")){
+  startEl.style.display = "none";
+  const c = CELLS.findIndex((_,i)=>ROLE[i]==="codebook");
+  curCell = c;
+  cam.x = CC[c].x + 0.2; cam.z = CC[c].z + 3.4; cam.y = 1.62;
+  cam.yaw = Math.atan2(cam.x - CC[c].x, cam.z - CC[c].z);
+  cam.pitch = -0.02;
+}
+
 // ?ov=code|reg|book opens an overlay directly, for stills and for demoing
 const _ov = new URLSearchParams(location.search).get("ov");
 if(_ov){ if(_ov === "code"){ const c = CELLS.findIndex((_,i)=>ROLE[i]==="codebook");
@@ -999,7 +1133,7 @@ if(_ov){ if(_ov === "code"){ const c = CELLS.findIndex((_,i)=>ROLE[i]==="codeboo
   openOverlay(_ov); }
 
 // ?shot=1 drops the overlay for screenshots and stills
-if(new URLSearchParams(location.search).get("shot") === "1"){
+if(new URLSearchParams(location.search).get("shot") === "1" && !new URLSearchParams(location.search).has("ent") && !new URLSearchParams(location.search).has("peek")){
   startEl.style.display = "none";
   cam.x = CC[curCell].x + 2.0; cam.z = CC[curCell].z + 1.6; cam.yaw = 2.5; cam.pitch = -0.03;
 }

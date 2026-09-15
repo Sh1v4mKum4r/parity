@@ -191,10 +191,11 @@ tb(s, 1.05, 5.74, 11.3, 1.05,
 # ---------------------------------------------------------------- first person
 s = slide(); header(s, "The game", "First-person, and the AI is in it")
 picture(s, "fig_3d.png", 2.05, 1.82, 9.2)
-tb(s, 0.72, 6.88, 11.9, 0.5,
-   "Eight cells of the facility in a hand-written WebGL build. Record three codebooks, reach the uplink, and "
-   "survive a thing that hears the doors you use. Here it has just found the player \u2014 and the panel on the "
-   "right shows exactly how.", size=12, color=MUT, line=1.28)
+tb(s, 0.72, 6.80, 11.9, 0.62,
+   "Hand-written WebGL. Each codebook room carries a lit panel with its keyword and eight bits; \u2009E\u2009 reads it "
+   "close up, \u2009TAB\u2009 is the notebook, \u2009F\u2009 cuts a door sensor, and the uplink takes the byte on \u20091\u20138\u2009 then \u2009ENTER\u2009. "
+   "Poison a page and the panel itself changes \u2014 your notebook does not. Here it has just found the player.",
+   size=11.5, color=MUT, line=1.26)
 
 # ---------------------------------------------------------------- the game
 s = slide(); header(s, "The same AI, in plain view", "The systems view: belief, sensors, and its reasoning")
@@ -237,9 +238,10 @@ table(s, [
     ["Telemetry", "Routes, dwell, edge traversals", "Complete", "director.py · E10"],
     ["Entity", "Perception, pursuit, interception", "Complete", "director.py · E4"],
     ["Sensors + belief", "Partial observation (NEW this cycle)", "Complete", "sensors.py · E11-E12"],
-    ["Notebook", "Freehand editor, strokes, undo, pages", "In game", "parity-game.html"],
-    ["Cipher", "Codebooks, register, transmit validation", "In game", "parity-game.html"],
-    ["Door clock", "Lockdown / window cycle, the whole rhythm", "In game", "parity-game.html"],
+    ["Notebook", "Freehand drawing, the only record of the bits", "In the 3D build", "parity-3d.html"],
+    ["Cipher", "Codebooks read in-world, register, transmit", "In the 3D build", "parity-3d.html"],
+    ["Door clock", "Lockdown / window cycle, the whole rhythm", "In the 3D build", "parity-3d.html"],
+    ["Counter-play", "Cutting a door sensor as a dangerous task", "In the 3D build", "parity-3d.html"],
     ["First-person build", "Walkable facility, clock, entity, AI narration", "Playable", "parity-3d.html"],
     ["Godot port", "Engine build, lighting, animation", "Not started", "\u2014"],
     ["Audio, content, progression", "Atmosphere, multiple floors, persistence", "Not started", "\u2014"],
@@ -460,10 +462,10 @@ tb(s, 0.72, 5.3, 11.9, 1.2,
 s = slide(); header(s, "Demonstration", "Four things that run right now")
 table(s, [
     ["#", "What", "What the panel sees"],
-    ["1", "THE GAME — parity-3d.html", "Walk it in first person. Three codebooks, then the uplink, with the thing hunting you and narrating itself top-right"],
+    ["1", "THE GAME — parity-3d.html", "First person. E reads a codebook, TAB is the notebook, the uplink takes the byte on 1-8 and ENTER. It hunts you and narrates itself top-right"],
     ["2", "Systems view — parity-game.html", "The same AI with its belief drawn on the map, and a sensor you can cut"],
     ["3", "Test suite — test_invariants.py", "9 invariants over 25 generated facilities, in seconds"],
-    ["4", "Cut a sensor", "Three windows stood still to kill a door, then watch it lose your trail"],
+    ["4", "Cut a sensor — F at a door", "Three windows stood still in the open, then watch it lose your trail"],
 ], col_w=[0.6, 3.6, 7.7], size=11.5, head_size=9)
 tb(s, 0.72, 5.0, 11.9, 0.9,
    "Everything runs offline in a browser or from the command line — nothing to install, no network. Turn AI "

@@ -541,10 +541,33 @@ moves (`model/test_invariants.py`, all passing):
 ![The first-person build, with the antagonist's reasoning on screen](../out/fig_3d.png)
 
 `demo/parity-3d.html` is the game: eight hexagonal cells generated as a room graph,
-first-person movement gated by the door clock, three codebooks to record and an
-uplink to reach, and an antagonist that hunts on the belief filter of §3.6 while
-narrating its own reasoning on the HUD — what tripped, how sure it is, what it
-expects next, and whether it is intercepting or sweeping.
+first-person movement gated by the door clock, and an antagonist that hunts on the
+belief filter of §3.6 while narrating its own reasoning on the HUD — what tripped,
+how sure it is, what it expects next, and whether it is intercepting or sweeping.
+
+The player's verbs, each prompted on screen where it applies:
+
+| Key | Where | What it does |
+|---|---|---|
+| `E` | a codebook room | Read the page close up. The keyword and its eight bits are also on a lit panel in the room itself, readable across the floor. |
+| `TAB` | anywhere | The notebook — freehand drawing. Nothing else records the bits for you. |
+| `E` | the uplink | The outbound register. `1`–`8` flip cells, `ENTER` transmits. |
+| `F` | at a door | Cut its sensor: three windows stood still, abandoned if you move. |
+
+Each codebook room carries a lit wall panel showing its keyword and eight bits, so
+the information is in the world rather than behind a keypress. When the Director
+poisons a codebook the player has already copied, **that panel changes** — silently,
+while they are in another room. The notebook they wrote it into does not.
+
+Overlays freeze movement but **not** the clock, which is the whole tension of the
+notebook: every page costs you windows. While a staged byte is on the register and
+the player is away from the uplink, the Director may flip one of its cells, and says
+so only in the AI view. The objective is two uncorrupted signals.
+
+The antagonist is a placeholder figure — a tall, thin, wrong-proportioned body with
+a single self-lit eye, which turns to face the player. The eye exists for a
+practical reason: in a scene lit only by a hand torch, an unlit shape is invisible
+until you are already looking at it.
 
 An automated playtest drives the same code a player does and completes the game:
 three codebooks recorded, uplink reached, signal away, having been caught once and
