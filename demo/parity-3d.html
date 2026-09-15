@@ -75,11 +75,13 @@
 <div class="start" id="start"><div>
   <h1>P A R I T Y</h1>
   <p><b>E</b> read a codebook or use the uplink &nbsp;·&nbsp; <b>TAB</b> notebook &nbsp;·&nbsp;
-     <b>F</b> cut a door sensor</p>
+     <b>F</b> cut a door sensor &nbsp;·&nbsp; <b>P</b> step mode</p>
   <p>Find the codebook for the keyword the uplink is asking for, write the eight bits in your
      notebook, carry them back, stage them and send. Twice.</p>
   <p>Doors all unlock together for a few seconds, then seal. Something is in here with
      you, it hears the doors you use, and it tells you what it is thinking &mdash; top right.</p>
+  <p><b>Step mode (P)</b> stops the clock. Doors stay open and it takes exactly one
+     turn each time you enter a room &mdash; the same model, one readable move at a time.</p>
   <p style="margin-top:14px">If your browser blocks mouse capture, drag to look or use the arrow keys.</p>
   <div class="go">CLICK TO ENTER</div>
 </div></div>
@@ -444,6 +446,10 @@ let entityCell = 5, caught = 0, visited = new Set(), objective = 0, msg = "";
 
 // which doorways carry a sensor
 const wired = new Set();
+function buildSensors(p){
+  wired.clear();
+  DOORWAYS.forEach(d => { if(Math.random() < p) wired.add(d.a+"-"+d.b); });
+}
 DOORWAYS.forEach((d,i) => { if(i % 3 !== 0) wired.add(d.a+"-"+d.b); });
 const isWired = (a,b) => wired.has(a+"-"+b) || wired.has(b+"-"+a);
 
@@ -463,6 +469,11 @@ const CODE = {}, KW = {};
 let target = Object.keys(CODE).map(Number)[0] ?? 0;   // the keyword being asked for
 let reg = "00000000".split(""), staged = false, sent = 0, corrupted = 0;
 let mode = "play", cutting = null, prompt = "", dead = false, T_WINDOWS = 0;
+// Demo mode detaches the door clock. Nothing happens while you stand still:
+// the entity takes exactly one turn per room you enter, so a single step of the
+// model can be narrated instead of racing a 3-second window. P toggles it.
+let demo = new URLSearchParams(location.search).get("demo") === "1", stepFrom = 0, stepDoor = null;
+const STEP = demo ? "move" : "window";
 
 function nearestCell(x,z){
   let best=0, bd=1e9;
@@ -479,7 +490,7 @@ function allowed(x,z){
   const dw = doorBetween(curCell,n);
   if(!dw || Math.hypot(x-dw.x, z-dw.z) > DOOR_W*1.15) return false;
   onEnterCell(curCell, n);
-  curCell = n;
+  stepDoor = dw; curCell = n;
   return true;
 }
 
@@ -542,7 +553,7 @@ function predictFrom(room){
   return { best, p: d[best] };
 }
 
-let windowStartCell = 0, searchSeen = {};
+let windowStartCell = 0, searchSeen = {}, grace = 0;
 function checkRoom(){
   // Being in the room is what records it. Doing this on doorway-crossing only
   // meant a respawn could drop you inside a codebook room that never registered.
@@ -555,6 +566,19 @@ function checkRoom(){
 }
 function onEnterCell(from, to){ /* kept for the movement call site */ }
 
+// Every room at maximum graph distance from src, so re-entry can pick among them.
+// Returning a single deterministic room let the entity camp the same opening
+// every time: it had learned the move and was always standing one step from it.
+function farthestFrom(src){
+  const dist = new Map([[src,0]]), q=[src];
+  while(q.length){
+    const c = q.shift();
+    neighboursOf(c).forEach(nb=>{ if(!dist.has(nb)){ dist.set(nb, dist.get(c)+1); q.push(nb); } });
+  }
+  const best = Math.max(...dist.values());
+  const far = [...dist.keys()].filter(c => dist.get(c) === best);
+  return far[Math.floor(Math.random()*far.length)];
+}
 function bfsStep(from, to){
   if(from===to) return from;
   const prev = new Map([[from,null]]), q=[from];
@@ -580,14 +604,20 @@ function resolveWindow(){
 
   learn(mp);
   let tgt;
-  if(conf >= 0.4){
+  if(grace > 0){
+    grace--;
+    const away = CELLS.map((_,i)=>i).filter(i => i !== mp && i !== entityCell);
+    tgt = away.length ? away[Math.floor(Math.random()*away.length)] : entityCell;
+    aiSay("The building is not the shape it was. Listening before I move on them.");
+  } else if(conf >= 0.4){
     const pr = predictFrom(mp);
     tgt = pr.best;
     aiSay("I expect you " + (pr.best===mp ? "to stay" : "in " + GLYPH[pr.best]) + " (" + Math.round(pr.p*100) + "%). Moving to intercept.");
   } else {
-    let oldest=0, ot=Infinity;
-    CELLS.forEach((_,i)=>{ const t = searchSeen[i] ?? -1; if(t<ot){ ot=t; oldest=i; } });
-    tgt = oldest;
+    let oldest=[], ot=Infinity;
+    CELLS.forEach((_,i)=>{ const t = searchSeen[i] ?? -1;
+      if(t < ot){ ot = t; oldest = [i]; } else if(t === ot) oldest.push(i); });
+    tgt = oldest[Math.floor(Math.random()*oldest.length)];
     aiSay("Too unsure to commit. Sweeping " + GLYPH[tgt] + ".");
   }
   if(cutting){
@@ -651,9 +681,9 @@ function die(){
   if(dead) return;
   dead = true; caught++;
   closeOverlay();
-  aiSay("I had them. It took " + T_WINDOWS + " windows.");
+  aiSay("I had them. It took " + T_WINDOWS + " " + STEP + "s.");
   document.getElementById("deadsub").textContent =
-    "It reached room " + GLYPH[curCell] + " before you did, on window " + T_WINDOWS + ". " +
+    "It reached room " + GLYPH[curCell] + " before you did, on " + STEP + " " + T_WINDOWS + ". " +
     (sent ? sent + (sent === 1 ? " signal" : " signals") + " got out before this one. " : "No signal got out. ") +
     "Your pages survive. So does its model of you.";
   document.getElementById("dead").style.display = "flex";
@@ -674,9 +704,12 @@ function reenter(){
   sent = 0; corrupted = 0; reg = "00000000".split(""); staged = false;
   target = Object.keys(CODE).map(Number)[0];
   belief = CELLS.map(()=>1/CELLS.length);
-  curCell = CELLS.findIndex((_,i)=>ROLE[i]==="uplink");
+  curCell = Math.floor(Math.random()*CELLS.length);   // dropped back in anywhere
+  stepFrom = curCell; stepDoor = null;
   cam.x = CC[curCell].x + 2.0; cam.z = CC[curCell].z + 1.6;
-  entityCell = CELLS.map((_,i)=>i).filter(i=>i!==curCell)[0];
+  searchSeen = {};
+  entityCell = farthestFrom(curCell);
+  grace = 1;
   phase = "lock"; timer = LOCKDOWN; doorsOpen = false;
   cutting = null; msg = ""; objective = 0;
   aiSay("They are back inside. I remember how they move.");
@@ -791,6 +824,14 @@ addEventListener("keydown", e => {
     return;
   }
   if(mode !== "play") return;
+  if(e.code === "KeyP"){
+    demo = !demo;
+    stepFrom = curCell;                       // never resolve a turn for a move already made
+    phase = "lock"; timer = LOCKDOWN; doorsOpen = false;
+    aiSay(demo ? "The clock is off. I will move when they do, and not before."
+               : "The clock is running again.");
+    return;
+  }
   if(e.code === "KeyE"){
     if(ROLE[curCell] === "codebook") openOverlay("code");
     else if(ROLE[curCell] === "uplink") openOverlay("reg");
@@ -920,8 +961,21 @@ function simulate(dt){
   cam.bob += moving ? dt*9.5 : 0;
   const bobY = moving ? Math.sin(cam.bob)*0.035 : 0;
 
-  // the facility breathes: sealed, then a short window when every door unlocks
-  if(!objective && !dead){
+  // The doorway is neutral ground: standing in one flips curCell back and forth
+  // as you drift across the midpoint. stepDoor latches the frame you crossed and
+  // releases only when you are properly out of it on the far side.
+  if(stepDoor && Math.hypot(cam.x-stepDoor.x, cam.z-stepDoor.z) > DOOR_W*1.35)
+    stepDoor = null;
+
+  if(demo){
+    // every door stands open and time does not pass; clearing one is the turn
+    doorsOpen = true;
+    if(!objective && !dead && curCell !== stepFrom && !stepDoor){
+      windowStartCell = stepFrom; stepFrom = curCell; T_WINDOWS++;
+      resolveWindow();
+    }
+  } else if(!objective && !dead){
+    // the facility breathes: sealed, then a short window when every door unlocks
     timer -= dt;
     if(timer <= 0){
       if(phase === "open"){ resolveWindow(); phase="lock"; timer=LOCKDOWN; doorsOpen=false; }
@@ -931,11 +985,18 @@ function simulate(dt){
   checkRoom();
   const tot = phase==="open" ? WINDOW : LOCKDOWN;
   const ph = document.getElementById("phase3");
-  ph.textContent = objective ? "SIGNAL AWAY" : (phase==="open" ? "DOORS OPEN" : "LOCKDOWN");
-  ph.style.color = phase==="open" ? "#5fd39a" : "#8a7f6a";
   const b3 = document.getElementById("bar3");
-  b3.style.width = Math.max(0, timer/tot*100) + "%";
-  b3.style.background = phase==="open" ? "#5fd39a" : "#ffb545";
+  if(demo){
+    // a cold bar, held full: the clock is not running and is not about to
+    ph.textContent = objective ? "SIGNAL AWAY" : "STEP MODE \u00b7 IT MOVES WHEN YOU DO";
+    ph.style.color = "#6fb5ff";
+    b3.style.width = "100%"; b3.style.background = "#2a78d6";
+  } else {
+    ph.textContent = objective ? "SIGNAL AWAY" : (phase==="open" ? "DOORS OPEN" : "LOCKDOWN");
+    ph.style.color = phase==="open" ? "#5fd39a" : "#8a7f6a";
+    b3.style.width = Math.max(0, timer/tot*100) + "%";
+    b3.style.background = phase==="open" ? "#5fd39a" : "#ffb545";
+  }
   document.getElementById("obj3").textContent =
     (msg ? msg + "   ·   " : "") + "signals away " + sent + "/2" +
     "   ·   need " + KW[target] + " from room " + GLYPH[target] +
@@ -1069,7 +1130,9 @@ if(_auto > 0){
     }
     const g = goal(), nxt = pathNext(curCell, g);
     const dw = nxt!==curCell ? doorBetween(curCell, nxt) : null;
-    const aim = dw ? {x:dw.x, z:dw.z} : {x:CC[curCell].x, z:CC[curCell].z};
+    // still in the frame you just crossed: walk into the room first, as a person
+    // would, rather than cutting straight along the wall to the next door
+    const aim = (dw && !stepDoor) ? {x:dw.x, z:dw.z} : {x:CC[curCell].x, z:CC[curCell].z};
     // face the doorway, exactly as a player would
     const want = Math.atan2(-(aim.x-cam.x), -(aim.z-cam.z));
     let d = want - cam.yaw;
@@ -1107,6 +1170,7 @@ if(_auto > 0){
       }
       lastPhase = phase;
     }
+    if(demo) T.windows = T_WINDOWS;    // step mode has no phase edge to count
     if(caught > T.caught){ T.caught = caught; }
   }
   T.books = visited.size;

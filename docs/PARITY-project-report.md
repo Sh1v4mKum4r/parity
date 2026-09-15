@@ -565,7 +565,31 @@ window tick down while you are mid-page is the whole tension of the notebook.
 
 Being caught **ends the run**. The facility regenerates and the codes change, but the
 player's notebook persists — and so does the antagonist's model of them, which is
-the point: the second run starts with it already knowing how you move. While a staged byte is on the register and
+the point: the second run starts with it already knowing how you move.
+
+**Step mode** (`P`, or `?demo=1`) detaches the door clock. Every door stands open,
+time does not pass, and the entity takes exactly one turn each time the player
+enters a room. The model, the filter and the sabotage rules are identical — only
+the trigger changes, from a three-second timer to the player's own movement. It
+exists so the system can be *read*: each belief update, prediction and interception
+can be narrated as a discrete step instead of racing a clock, which is what the
+panel asked to see.
+
+Two defects surfaced only once step mode existed, and both were live in real-time
+play as well:
+
+* **A doorway is ambiguous ground.** Standing in one flips the occupied cell back
+  and forth across the midpoint. The real-time clock sampled the player's position
+  once per window and never saw it; step mode charged a turn for every flip. The
+  fix latches the doorway that was crossed and releases it only once the player is
+  clear on the far side, so jitter cannot cost turns.
+* **Re-entry was a fixed opening.** The player always respawned at the uplink and
+  the entity always at the same "farthest" room, so a model that had learned the
+  player's first move could camp it — producing an unwinnable loop of identical
+  deaths. Re-entry now draws the player's room at random and the entity's from all
+  rooms at maximum graph distance, and the entity spends one step observing before
+  it commits, on the grounds that the facility it is standing in has just been
+  rewired. While a staged byte is on the register and
 the player is away from the uplink, the Director may flip one of its cells, and says
 so only in the AI view. The objective is two uncorrupted signals.
 
