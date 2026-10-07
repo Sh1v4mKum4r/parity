@@ -16,7 +16,7 @@ and explains its own reasoning on screen.
 | `demo/parity-notebook.html` | Freehand notebook — stroke-based, Excalidraw-style erase, pages. |
 | `demo/parity-room.html` | Art-direction study for the 3D layer. |
 
-Everything runs offline in a browser. Nothing to install.
+Everything runs offline in a browser. Nothing to install — the audio is synthesised at runtime, so there are no asset files either.
 
 ## Documents
 

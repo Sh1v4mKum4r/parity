@@ -138,7 +138,21 @@ function mul(a,b){
 // cell) or solid wall -- which is exactly the room-graph the predictor plays on,
 // given physical form. Side count is the difficulty setting.
 const R = 4.6, H = 3.5, DOOR_W = 1.5, DOOR_H = 2.35;
-const CELLS = [[0,0],[1,0],[0,1],[-1,1],[-1,0],[0,-1],[1,-1],[1,1]];
+// The facility is a hex field of RINGS rings. At one ring it is 7 rooms with a
+// graph diameter of 2 -- against a predictor this good there is nowhere to run,
+// which is the whole problem. Two rings is 19 rooms, measured diameter 5, so the
+// search becomes real and a lead you have built actually buys you something.
+const RINGS = 2;
+const CELLS = (() => {
+  const out = [];
+  for(let q=-RINGS; q<=RINGS; q++)
+    for(let r=Math.max(-RINGS,-q-RINGS); r<=Math.min(RINGS,-q+RINGS); r++)
+      out.push([q,r]);
+  // the uplink is cell 0, so the centre has to come first
+  out.sort((a,b) => (Math.abs(a[0])+Math.abs(a[1])+Math.abs(a[0]+a[1])) -
+                    (Math.abs(b[0])+Math.abs(b[1])+Math.abs(b[0]+b[1])));
+  return out;
+})();
 const key = (q,r) => q+","+r;
 const has = (q,r) => CELLS.some(c => c[0]===q && c[1]===r);
 const NB = [[1,0],[0,1],[-1,1],[-1,0],[0,-1],[1,-1]];
@@ -687,6 +701,20 @@ function onEnterCell(from, to){ /* kept for the movement call site */ }
 // Every room at maximum graph distance from src, so re-entry can pick among them.
 // Returning a single deterministic room let the entity camp the same opening
 // every time: it had learned the move and was always standing one step from it.
+function hopsBetween(a,b){
+  if(a===b) return 0;
+  const dist = new Map([[a,0]]), q=[a];
+  while(q.length){
+    const c = q.shift();
+    for(const nb of neighboursOf(c)){
+      if(dist.has(nb)) continue;
+      dist.set(nb, dist.get(c)+1);
+      if(nb===b) return dist.get(nb);
+      q.push(nb);
+    }
+  }
+  return 99;
+}
 function farthestFrom(src){
   const dist = new Map([[src,0]]), q=[src];
   while(q.length){
@@ -757,7 +785,7 @@ function resolveWindow(){
   if(cutting){
     if(curCell !== cutting.cell){ msg = "You moved. The sensor job is abandoned."; cutting = null; }
     else if(--cutting.left <= 0){
-      wired.delete(cutting.key); cuts++;
+      wired.delete(cutting.key); cuts++; sfx.cut();
       msg = "That sensor is dead.";
       aiSay("I have lost a door. You can use it without telling me.");
       cutting = null;
@@ -787,7 +815,11 @@ function resolveWindow(){
   }
   searchSeen[entityCell] = performance.now();
   entityCell = bfsStep(entityCell, tgt);
-  if(entityCell === curCell) die();
+  // you hear it move before you ever see it; two rooms out it is just a suggestion
+  const hops = hopsBetween(entityCell, curCell);
+  if(hops > 0) sfx.far(hops);
+  if(hops === 1) msg = "Something moved, close.";
+  if(entityCell === curCell) spot();
 }
 
 // ?diag=1 dumps GL state into the DOM so a headless browser can report it
@@ -815,7 +847,8 @@ if(new URLSearchParams(location.search).get("diag") === "1"){
 
 function win(){
   if(won) return;
-  won = true; objective = 1;
+  won = true; objective = 1; hunted = false;
+  sfx.win();
   closeOverlay();
   aiSay("Both signals are out. I could not stop either one.");
   const unit = T_WINDOWS === 1 ? STEP() : STEP() + "s";
@@ -834,9 +867,53 @@ function win(){
   if(document.pointerLockElement) document.exitPointerLock();
 }
 
+// It used to kill you the instant it stepped into your room, which is not a
+// horror game, it is a state flag. Now it arrives at the far side of the room and
+// closes on you in real time: faster than a walk, slower than a sprint. Get out
+// through any door -- they are forced open while it is in here with you -- or it
+// reaches you.
+const HUNT_SPEED = 2.9;          // walk is 2.3, sprint is 4.4: you can outrun it, barely
+const HUNT_HOLD  = 0.45;         // it stops in the doorway first. That pause is the game.
+let hunted = false, huntCell = -1, huntHold = 0, entW = { x:0, z:0 };
+function spot(){
+  if(dead || won || hunted) return;
+  hunted = true; huntCell = curCell; huntHold = HUNT_HOLD;
+  // if you were mid-page the book is knocked out of your hands -- being frozen in
+  // an overlay while it crosses the room is a death with no say in it
+  if(mode !== "play") closeOverlay();
+  // it comes in from the edge of the room, as far from you as the room allows
+  const c = CC[curCell];
+  let dx = c.x - cam.x, dz = c.z - cam.z;
+  const l = Math.hypot(dx,dz) || 1;
+  entW.x = c.x + (dx/l) * R * 0.92;
+  entW.z = c.z + (dz/l) * R * 0.92;
+  sfx.spotted();
+  msg = "IT IS IN HERE \u2014 GET OUT";
+  aiSay("I have them. Room <b style='color:#ff4d3d'>" + GLYPH[curCell] + "</b>.");
+}
+function huntStep(dt){
+  if(!hunted) return;
+  if(curCell !== huntCell){                 // you made it through a door
+    hunted = false;
+    msg = "You lost it, for now.";
+    aiSay("They got out. I know which door they used.");
+    sfx.far(1);
+    return;
+  }
+  let dx = cam.x - entW.x, dz = cam.z - entW.z;
+  const d = Math.hypot(dx,dz) || 1;
+  if(huntHold > 0){ huntHold -= dt; return; }   // it looks at you first
+  entW.x += (dx/d) * HUNT_SPEED * dt;
+  entW.z += (dz/d) * HUNT_SPEED * dt;
+  if(d < 1.05){ die(); return; }
+  // its footfalls get louder and faster the closer it is
+  if(Math.random() < dt * (3.5 + 6.0/Math.max(d,0.8))) sfx.far(d*0.22);
+}
+
 function die(){
   if(dead) return;
-  dead = true; caught++;
+  dead = true; caught++; hunted = false;
+  sfx.death();
   closeOverlay();
   aiSay("I had them. It took " + T_WINDOWS + " " + STEP() + "s.");
   document.getElementById("deadsub").textContent =
@@ -849,7 +926,7 @@ function die(){
 
 function reenter(){
   // the facility regenerates; the notebook and its model of you do not
-  dead = false; won = false;
+  dead = false; won = false; hunted = false; huntCell = -1; huntHold = 0;
   document.getElementById("dead").style.display = "none";
   document.getElementById("won").style.display = "none";
   buildSensors(0.6);
@@ -957,14 +1034,14 @@ function renderRegister(){
 function sendSignal(){
   const truth = CODE[target];
   if(reg.join("") === truth){
-    sent++; staged = false; reg = "00000000".split("");
+    sent++; staged = false; reg = "00000000".split(""); sfx.sent();
     aiSay("A signal left the facility. I could not stop it.");
     msg = "SIGNAL ACCEPTED.";
     const ks = Object.keys(CODE).map(Number);
     target = ks[(ks.indexOf(target)+1) % ks.length];
     if(sent >= 2) win();
   } else {
-    corrupted++;
+    corrupted++; sfx.corrupt();
     msg = "SIGNAL CORRUPTED \u2014 you sent " + reg.join("") + ", the facility reads " + truth + ".";
     aiSay("Their signal came apart on the way out.");
   }
@@ -1049,11 +1126,77 @@ addEventListener("keyup",   e => { keys[e.code]=false; });
 // Three ways to look around, because pointer lock is unreliable: Firefox and
 // LibreWolf routinely refuse it on file:// URLs and the rejection is silent.
 // Locked mouse if we can get it, click-drag if we cannot, arrow keys always.
+// ---------------------------------------------------------------- audio
+// Everything is synthesised. No files, so the build stays one offline page, and
+// the facility can be made to sound like it is reacting rather than replaying.
+let AC = null, master = null, noise = null, droneGain = null;
+function initAudio(){
+  if(AC) return;
+  try { AC = new (window.AudioContext || window.webkitAudioContext)(); }
+  catch(e){ return; }
+  master = AC.createGain(); master.gain.value = 0.9; master.connect(AC.destination);
+
+  // one second of noise, reused for every breath, footfall and impact
+  noise = AC.createBuffer(1, AC.sampleRate, AC.sampleRate);
+  const d = noise.getChannelData(0);
+  for(let i=0;i<d.length;i++) d[i] = Math.random()*2 - 1;
+
+  // the room tone: two detuned oscillators under a low filter. It is the sound
+  // of the building being powered, and it is the bed everything else sits on.
+  droneGain = AC.createGain(); droneGain.gain.value = 0.0;
+  const lp = AC.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 180;
+  [41.2, 41.9].forEach(f => {
+    const o = AC.createOscillator(); o.type = "sawtooth"; o.frequency.value = f;
+    o.connect(lp); o.start();
+  });
+  lp.connect(droneGain); droneGain.connect(master);
+  droneGain.gain.linearRampToValueAtTime(0.16, AC.currentTime + 3);
+}
+function burst(dur, freq, q, gain, type){
+  if(!AC) return;
+  const src = AC.createBufferSource(); src.buffer = noise;
+  const f = AC.createBiquadFilter(); f.type = type || "bandpass";
+  f.frequency.value = freq; f.Q.value = q;
+  const g = AC.createGain();
+  const t = AC.currentTime;
+  g.gain.setValueAtTime(gain, t);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  src.connect(f); f.connect(g); g.connect(master);
+  src.start(t); src.stop(t + dur);
+}
+function tone(freq, dur, gain, type){
+  if(!AC) return;
+  const o = AC.createOscillator(); o.type = type || "sine"; o.frequency.value = freq;
+  const g = AC.createGain(); const t = AC.currentTime;
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(gain, t + 0.012);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.connect(g); g.connect(master); o.start(t); o.stop(t + dur);
+}
+const sfx = {
+  step:      () => burst(0.085, 110 + Math.random()*40, 1.1, 0.16),
+  doorOpen:  () => { tone(320, 0.18, 0.09, "triangle"); burst(0.5, 700, 0.8, 0.05); },
+  doorSeal:  () => { tone(70, 0.5, 0.16, "square");  burst(0.35, 160, 0.9, 0.16); },
+  write:     () => burst(0.05, 2600, 2.5, 0.035),
+  cut:       () => { burst(0.2, 1800, 3.0, 0.09); tone(140, 0.3, 0.05, "sawtooth"); },
+  sent:      () => { [523,659,784].forEach((f,i)=> setTimeout(()=>tone(f,0.22,0.07,"triangle"), i*85)); },
+  corrupt:   () => { tone(98, 0.6, 0.12, "sawtooth"); burst(0.5, 300, 0.6, 0.1); },
+  // the entity, heard through walls: further away is duller and quieter
+  far:       (dist) => { const k = Math.max(0, 1 - dist*0.42);
+                         if(k > 0.02) burst(0.13, 70 + 50*k, 0.9, 0.3*k*k, "lowpass"); },
+  spotted:   () => { tone(1400, 0.1, 0.16, "square"); tone(930, 0.5, 0.13, "sawtooth");
+                     burst(0.7, 400, 0.5, 0.2); },
+  death:     () => { if(!AC) return; droneGain.gain.linearRampToValueAtTime(0.0, AC.currentTime+0.4);
+                     tone(55, 1.6, 0.26, "sawtooth"); burst(1.4, 120, 0.4, 0.22); },
+  win:       () => { [392,523,659,784].forEach((f,i)=> setTimeout(()=>tone(f,0.5,0.08,"sine"), i*140)); },
+};
+
 const startEl = document.getElementById("start");
 const note = document.getElementById("note");
 let locked = false, dragging = false;
 
 function tryLock(){
+  initAudio();
   startEl.style.display = "none";           // enter regardless of whether lock works
   const r = cv.requestPointerLock && cv.requestPointerLock();
   if(r && typeof r.catch === "function") r.catch(() => { locked = false; showFallback(); });
@@ -1117,7 +1260,10 @@ function simulate(dt){
   if(allowed(cam.x+dx, cam.z))   cam.x += dx;
   if(allowed(cam.x, cam.z+dz))   cam.z += dz;
   const moving = Math.abs(dx)+Math.abs(dz) > 0.0005;
+  const bobWas = cam.bob;
   cam.bob += moving ? dt*9.5 : 0;
+  // a footfall each time the bob cycle passes its low point
+  if(moving && Math.floor(bobWas/Math.PI) !== Math.floor(cam.bob/Math.PI)) sfx.step();
   const bobY = moving ? Math.sin(cam.bob)*0.035 : 0;
 
   // The doorway is neutral ground: standing in one flips curCell back and forth
@@ -1125,6 +1271,9 @@ function simulate(dt){
   // releases only when you are properly out of it on the far side.
   if(stepDoor && Math.hypot(cam.x-stepDoor.x, cam.z-stepDoor.z) > DOOR_W*1.35)
     stepDoor = null;
+
+  huntStep(dt);
+  if(hunted) doorsOpen = true;          // you are never sealed in with it
 
   if(demo){
     // every door stands open and time does not pass; clearing one is the turn
@@ -1137,8 +1286,8 @@ function simulate(dt){
     // the facility breathes: sealed, then a short window when every door unlocks
     timer -= dt;
     if(timer <= 0){
-      if(phase === "open"){ resolveWindow(); phase="lock"; timer=LOCKDOWN; doorsOpen=false; }
-      else { phase="open"; timer=WINDOW; doorsOpen=true; windowStartCell=curCell; T_WINDOWS++; }
+      if(phase === "open"){ resolveWindow(); phase="lock"; timer=LOCKDOWN; doorsOpen=false; sfx.doorSeal(); }
+      else { phase="open"; timer=WINDOW; doorsOpen=true; windowStartCell=curCell; T_WINDOWS++; sfx.doorOpen(); }
     }
   }
   checkRoom();
@@ -1206,7 +1355,8 @@ function frame(now){
   }
 
   const ec = CC[entityCell];
-  const ex = ec.x - 1.5, ez = ec.z - 1.2;
+  const ex = hunted ? entW.x : ec.x - 1.5;
+  const ez = hunted ? entW.z : ec.z - 1.2;
   gl.uniform3f(gl.getUniformLocation(scene,"uOffset"), ex, 0, ez);
   // the model faces -Z, so turning it to look at you is atan2(-dx, -dz)
   gl.uniform1f(gl.getUniformLocation(scene,"uYaw"), Math.atan2(ex - cam.x, ez - cam.z));
@@ -1400,6 +1550,14 @@ if(_press){
   startEl.style.display = "none";
   for(const code of _press.split(",")) if(code)
     dispatchEvent(new KeyboardEvent("keydown", {code, bubbles:true}));
+}
+
+// ?hunt=1 puts it in the room with you, for stills and for feeling out the chase
+if(new URLSearchParams(location.search).has("hunt")){
+  startEl.style.display = "none";
+  cam.x = CC[curCell].x + 1.4; cam.z = CC[curCell].z + 1.0; cam.yaw = 2.5;
+  entityCell = curCell;
+  setTimeout(spot, 0);
 }
 
 // ?win=1 triggers the end-of-run success screen, for stills

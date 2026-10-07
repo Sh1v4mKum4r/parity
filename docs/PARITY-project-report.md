@@ -573,6 +573,29 @@ Being caught **ends the run**. The facility regenerates and the codes change, bu
 player's notebook persists — and so does the antagonist's model of them, which is
 the point: the second run starts with it already knowing how you move.
 
+The facility is a hex field of `RINGS` rings. It was one ring — 8 rooms, graph
+diameter 2 — which against an 83%-accurate predictor left the player nowhere to
+run: the antagonist could reach any room from any other in two moves. It is now
+two rings: 19 rooms, measured diameter 5, mean degree 3.68. A lead the player
+builds is now worth something, and the search the belief filter performs is a real
+search rather than a formality.
+
+**Being found is survivable.** It used to kill on contact — `if(entityCell ===
+curCell) die()` — with no footsteps, no glimpse and no approach, which is a state
+flag rather than a horror game. The antagonist now enters at the far side of the
+room and holds for 0.45s before it comes, moving at 2.9 m/s against a 2.3 m/s walk
+and a 4.4 m/s sprint. Doors are forced open while it is in the room, so the player
+is never sealed in with it, and any overlay is closed on entry — being frozen
+mid-page while it crosses the floor is a death with no say in it. Leaving the room
+breaks the hunt and it is told which door was used.
+
+All audio is synthesised with the Web Audio API — no asset files, so the build
+stays a single offline page. The room tone is two detuned oscillators under a
+low-pass; footsteps, door seals, sensor cuts and the antagonist's movement are
+filtered noise bursts. The antagonist is audible through walls at a volume set by
+its graph distance from the player, so it is heard approaching a room before it is
+ever seen.
+
 Each room is dressed from the same static buffer as its walls: corner pilasters,
 a skirting and a chest-height rib on every solid side, a ceiling fixture with a
 self-lit strip, conduit crossing overhead, and a prop that says what the room is
