@@ -580,6 +580,18 @@ two rings: 19 rooms, measured diameter 5, mean degree 3.68. A lead the player
 builds is now worth something, and the search the belief filter performs is a real
 search rather than a formality.
 
+**The doors are real.** The clock is the spine of the game and nothing on screen
+used to move when it turned over: "LOCKDOWN" and "DOORS OPEN" were text over a
+permanently open hole in the wall. Each opening now carries a panel that drops
+into the floor when the window opens and rises to seal it, animated rather than
+snapped, so a closing door is something the player watches and races. One mesh,
+drawn once per opening, rotated onto its wall by `uYaw` and slid by `uOffset`.
+
+**The building reacts.** Two shader uniforms drive it: the emergency lights
+breathe slowly under lockdown and come up hard while the doors are open, and the
+player's torch stutters when the antagonist is within one room — the only warning
+that does not arrive through the speakers. During a hunt the torch strobes.
+
 **Being found is survivable.** It used to kill on contact — `if(entityCell ===
 curCell) die()` — with no footsteps, no glimpse and no approach, which is a state
 flag rather than a horror game. The antagonist now enters at the far side of the

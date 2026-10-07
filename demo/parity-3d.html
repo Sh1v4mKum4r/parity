@@ -355,6 +355,7 @@ void main(){
 precision highp float;
 in vec3 vPos; in vec3 vNrm; in float vShade;
 uniform vec3 uEye; uniform vec3 uDir;
+uniform float uTorch; uniform float uEmis;
 out vec4 frag;
 void main(){
   vec3 d = vPos - uEye;
@@ -368,13 +369,13 @@ void main(){
   if(dot(N, -L) < 0.0) N = -N;          // two-sided: never a black surface
   float lambert = max(dot(N, -L), 0.0);
   float spill = smoothstep(0.05, 0.75, cone) * atten * lambert * 0.85;  // torches spill
-  float lit = spot * atten * lambert * 3.2 + spill;
+  float lit = (spot * atten * lambert * 3.2 + spill) * uTorch;
   float ambient = 0.055 + 0.040 * lambert;      // enough to read on a projector
   // shade above 1 marks a self-lit surface: the only thing in here that glows
   float emis = max(vShade - 1.0, 0.0);
   float isEm = step(0.0001, emis);              // an emissive surface takes no torchlight
   vec3 concrete = vec3(0.74, 0.72, 0.68) * min(vShade, 1.0) * (1.0 - isEm);
-  vec3 col = concrete * (lit + ambient) + vec3(1.0, 0.10, 0.06) * emis * 3.4;
+  vec3 col = concrete * (lit + ambient) + vec3(1.0, 0.10, 0.06) * emis * 3.4 * uEmis;
   col += vec3(1.0, 0.86, 0.62) * lit * 0.16;    // warm tungsten bias
   float fog = 1.0 - exp(-dist * 0.072);
   col = mix(col, vec3(0.020, 0.019, 0.017), fog * (1.0 - min(emis, 0.75)));
@@ -530,6 +531,44 @@ attrib(scene, "aPos", lp, 3);
 attrib(scene, "aNrm", ln, 3);
 attrib(scene, "aShade", ls, 1);
 const LCOUNT = lp.length/3;
+
+// The door clock is the spine of the game and nothing on screen moved when it
+// turned over. These are real panels: they drop into the floor when the window
+// opens and rise to seal it. One mesh, drawn once per opening, rotated onto the
+// wall by uYaw and slid by uOffset.
+const dvao = gl.createVertexArray(); gl.bindVertexArray(dvao);
+const dp=[], dn=[], ds=[];
+(function buildDoor(){
+  const hw = DOOR_W*0.5 + 0.06, th = 0.07, top = DOOR_H - 0.02;
+  const f = (a,b,c,d,n,sh) => { for(const v of [a,b,c,a,c,d]){
+    dp.push(v[0],v[1],v[2]); dn.push(n[0],n[1],n[2]); ds.push(sh); } };
+  f([-hw,0,th],[hw,0,th],[hw,top,th],[-hw,top,th],[0,0,1],0.58);
+  f([hw,0,-th],[-hw,0,-th],[-hw,top,-th],[hw,top,-th],[0,0,-1],0.58);
+  f([-hw,top,-th],[-hw,top,th],[hw,top,th],[hw,top,-th],[0,1,0],0.66);
+  f([hw,0,th],[hw,0,-th],[hw,top,-th],[hw,top,th],[1,0,0],0.44);
+  f([-hw,0,-th],[-hw,0,th],[-hw,top,th],[-hw,top,-th],[-1,0,0],0.44);
+  // a rib across the middle so it reads as a slab of metal, not a card
+  f([-hw,1.12,th+0.02],[hw,1.12,th+0.02],[hw,1.30,th+0.02],[-hw,1.30,th+0.02],[0,0,1],0.70);
+  f([-hw,1.12,-th-0.02],[hw,1.12,-th-0.02],[hw,1.30,-th-0.02],[-hw,1.30,-th-0.02],[0,0,-1],0.70);
+})();
+attrib(scene, "aPos", dp, 3);
+attrib(scene, "aNrm", dn, 3);
+attrib(scene, "aShade", ds, 1);
+const DCOUNT = dp.length/3;
+
+// one panel per opening, not one per side
+const DOORSET = (() => {
+  const seen = new Set(), out = [];
+  for(const d of DOORWAYS){
+    const k = Math.min(d.a,d.b) + "-" + Math.max(d.a,d.b);
+    if(seen.has(k)) continue;
+    seen.add(k);
+    out.push({ x: d.x, z: d.z, yaw: Math.atan2(-d.uz, d.ux) });
+  }
+  return out;
+})();
+let doorAmt = 0;                     // 0 sealed, 1 fully dropped
+let torchLevel = 1, emisLevel = 1;
 gl.bindVertexArray(null);
 
 const qvao = gl.createVertexArray(); gl.bindVertexArray(qvao);
@@ -1272,6 +1311,21 @@ function simulate(dt){
   if(stepDoor && Math.hypot(cam.x-stepDoor.x, cam.z-stepDoor.z) > DOOR_W*1.35)
     stepDoor = null;
 
+  // the panels chase the clock rather than snapping, so you can watch one close
+  const wantOpen = doorsOpen ? 1 : 0;
+  doorAmt += Math.max(-1, Math.min(1, wantOpen - doorAmt)) * Math.min(1, dt*4.2);
+
+  // The building reacts. Emergency lights breathe slowly under lockdown and come
+  // up hard while the doors are open; your torch stutters when it is near, which
+  // is the only warning you get that does not come through the speakers.
+  const tNow = performance.now() * 0.001;
+  const hopsNow = (dead || won) ? 9 : hopsBetween(entityCell, curCell);
+  emisLevel = doorsOpen ? 1.55 : 0.72 + 0.28 * Math.sin(tNow * 1.9);
+  let flick = 1.0;
+  if(hunted)            flick = 0.55 + 0.45 * Math.abs(Math.sin(tNow * 23.0));
+  else if(hopsNow <= 1) flick = 0.86 + 0.14 * Math.sin(tNow * 13.0) * (Math.random() < 0.5 ? 1 : 0.2);
+  torchLevel += (flick - torchLevel) * Math.min(1, dt * 18);
+
   huntStep(dt);
   if(hunted) doorsOpen = true;          // you are never sealed in with it
 
@@ -1342,8 +1396,18 @@ function frame(now){
   gl.uniform3fv(gl.getUniformLocation(scene,"uDir"), new Float32Array(dir));
   gl.uniform3f(gl.getUniformLocation(scene,"uOffset"), 0, 0, 0);
   gl.uniform1f(gl.getUniformLocation(scene,"uYaw"), 0);
+  gl.uniform1f(gl.getUniformLocation(scene,"uTorch"), torchLevel);
+  gl.uniform1f(gl.getUniformLocation(scene,"uEmis"),  emisLevel);
   gl.bindVertexArray(vao);
   gl.drawArrays(gl.TRIANGLES, 0, VCOUNT);
+
+  // the doors
+  gl.bindVertexArray(dvao);
+  for(const d of DOORSET){
+    gl.uniform1f(gl.getUniformLocation(scene,"uYaw"), d.yaw);
+    gl.uniform3f(gl.getUniformLocation(scene,"uOffset"), d.x, -DOOR_H*doorAmt, d.z);
+    gl.drawArrays(gl.TRIANGLES, 0, DCOUNT);
+  }
 
   // live sensors, one draw each; a cut one is simply absent
   gl.uniform1f(gl.getUniformLocation(scene,"uYaw"), 0);
@@ -1550,6 +1614,13 @@ if(_press){
   startEl.style.display = "none";
   for(const code of _press.split(",")) if(code)
     dispatchEvent(new KeyboardEvent("keydown", {code, bubbles:true}));
+}
+
+// ?open=1 forces the window open, to see the doors down
+if(new URLSearchParams(location.search).has("open")){
+  startEl.style.display = "none";
+  cam.x = CC[curCell].x + 2.0; cam.z = CC[curCell].z + 1.6; cam.yaw = 2.5; cam.pitch = -0.03;
+  phase = "open"; timer = 999; doorsOpen = true; doorAmt = 1;
 }
 
 // ?hunt=1 puts it in the room with you, for stills and for feeling out the chase
