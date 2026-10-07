@@ -8,13 +8,26 @@
   .hud{position:fixed;left:18px;top:16px;font-size:11px;line-height:1.6;color:var(--muted);
        text-shadow:0 1px 3px #000;pointer-events:none;letter-spacing:.04em}
   .hud b{color:var(--amber);font-weight:400}
-  .start{position:fixed;inset:0;display:grid;place-items:center;background:rgba(8,7,6,.86);
-         text-align:center;cursor:pointer;z-index:5}
-  .start div{max-width:44ch}
-  .start h1{font-size:19px;letter-spacing:.24em;color:var(--amber);margin:0 0 14px;font-weight:700}
-  .start p{font-size:12px;color:var(--muted);line-height:1.75;margin:0 0 8px}
-  .start .go{margin-top:18px;font-size:11px;color:var(--ink);border:1px solid var(--line);
-              padding:9px 14px;display:inline-block;letter-spacing:.12em}
+  .start{position:fixed;inset:0;display:grid;place-items:center;cursor:pointer;z-index:5;
+         background:radial-gradient(ellipse at 50% 38%, #1a1510 0%, #0a0908 58%, #050504 100%)}
+  .start .panel{max-width:62ch;text-align:center;padding:0 20px}
+  .start h1{font-size:46px;letter-spacing:.42em;color:var(--amber);margin:0 0 2px;font-weight:700;
+            text-indent:.42em;text-shadow:0 0 34px rgba(255,181,69,.30)}
+  .start .bit{font-size:11px;letter-spacing:.52em;color:#6f6653;margin:0 0 22px;text-indent:.52em}
+  .start .lede{font-size:12.5px;color:#a2977f;line-height:1.85;margin:0 auto 20px;max-width:50ch}
+  .start .lede em{color:#e8dcc4;font-style:normal}
+  .start .rule{height:1px;background:linear-gradient(90deg,transparent,#2e2920 18%,#2e2920 82%,transparent);
+               margin:20px auto}
+  .start .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));gap:9px 18px;
+               text-align:left;margin:0 auto 6px;max-width:52ch}
+  .start .row{font-size:11.5px;color:#8a7f6a;display:flex;gap:9px;align-items:baseline}
+  .start .k{color:var(--amber);font-weight:700;min-width:3.4em;letter-spacing:.06em}
+  .start .go{margin-top:24px;font-size:11.5px;color:var(--ink);border:1px solid #4a4133;
+             padding:11px 22px;display:inline-block;letter-spacing:.2em;
+             animation:breathe 2.6s ease-in-out infinite}
+  @keyframes breathe{0%,100%{opacity:.52;border-color:#3a3328}50%{opacity:1;border-color:#6b5f49}}
+  .start .foot{font-size:10.5px;color:#56503f;margin-top:16px;line-height:1.7}
+  @media (max-height:560px){ .start h1{font-size:30px} .start .grid{display:none} }
   .tag{position:fixed;right:18px;bottom:14px;font-size:10px;color:#4a453b;letter-spacing:.1em}
 </style>
 
@@ -84,18 +97,35 @@
   </div>
 </div>
 
-<div class="start" id="start"><div>
-  <h1>P A R I T Y</h1>
-  <p><b>E</b> read a codebook or use the uplink &nbsp;·&nbsp; <b>TAB</b> notebook &nbsp;·&nbsp;
-     <b>F</b> cut a door sensor &nbsp;·&nbsp; <b>P</b> step mode</p>
-  <p>Find the codebook for the keyword the uplink is asking for, write the eight bits in your
-     notebook, carry them back, stage them and send. Twice.</p>
-  <p>Doors all unlock together for a few seconds, then seal. Something is in here with
-     you, it hears the doors you use, and it tells you what it is thinking &mdash; top right.</p>
-  <p><b>Step mode (P)</b> stops the clock. Doors stay open and it takes exactly one
-     turn each time you enter a room &mdash; the same model, one readable move at a time.</p>
-  <p style="margin-top:14px">If your browser blocks mouse capture, drag to look or use the arrow keys.</p>
+<div class="start" id="start"><div class="panel">
+  <h1>PARITY</h1>
+  <div class="bit">0 1 0 0 1 1 0 1</div>
+
+  <p class="lede">Something in this facility is building a model of how you move.
+     It cannot see you. It hears which doors you use, and from that it works out
+     where you are going &mdash; and goes there instead.</p>
+  <p class="lede">Carry eight bits from a codebook to the uplink and transmit. <em>Twice.</em>
+     It will quietly rewrite a page you have already copied, so the only record you can
+     trust is the one in your own hand.</p>
+
+  <div class="rule"></div>
+  <div class="grid">
+    <div class="row"><span class="k">WASD</span><span>move &middot; shift to run</span></div>
+    <div class="row"><span class="k">MOUSE</span><span>look &middot; or the arrow keys</span></div>
+    <div class="row"><span class="k">E</span><span>read a codebook, or work the uplink</span></div>
+    <div class="row"><span class="k">TAB</span><span>your notebook &mdash; draw freely</span></div>
+    <div class="row"><span class="k">F</span><span>cut a door sensor, held still</span></div>
+    <div class="row"><span class="k">1&ndash;8</span><span>flip a bit &middot; ENTER sends</span></div>
+    <div class="row"><span class="k">P</span><span>step mode &mdash; stops the clock</span></div>
+    <div class="row"><span class="k">ESC</span><span>release the mouse</span></div>
+  </div>
+  <div class="rule"></div>
+
+  <p class="lede" style="margin-bottom:0">Every door in the building unlocks together for three
+     seconds, then seals. It obeys the same clock you do.</p>
   <div class="go">CLICK TO ENTER</div>
+  <p class="foot">Sound on, if you can &mdash; you will hear it before you see it.<br>
+     In <b>step mode</b> nothing moves until you change rooms, so you can watch it think.</p>
 </div></div>
 
 <script>
@@ -1024,6 +1054,7 @@ function hudVisible(on){
 }
 
 function openOverlay(kind){
+  if(kind === "reg" && mode !== "reg") regFeedback = null;
   mode = kind;
   hudVisible(false);
   const ov = document.getElementById("overlay");
@@ -1054,8 +1085,25 @@ function closeOverlay(){
   document.getElementById("overlay").style.display = "none";
 }
 
+// The result of a send used to go to `msg`, which renders in the HUD line in the
+// top right -- while the player is looking at the panel in the middle of the
+// screen. You pressed Enter and, as far as you could tell, nothing happened. It
+// reports into the register itself now.
+let regFeedback = null;
 function renderRegister(){
   const body = document.getElementById("ovbody");
+  const unread = !visited.has(target);
+  const warn = unread
+    ? '<div style="margin-top:14px;padding:9px 12px;border:1px solid #6b4a12;background:#241a07;' +
+      'color:#ffb545;font-size:12px">You have not read codebook <b>' + GLYPH[target] + '</b> yet. ' +
+      'Without its eight bits there is nothing to send but a guess.</div>'
+    : '';
+  const fb = regFeedback
+    ? '<div style="margin-top:14px;padding:10px 12px;font-size:12px;line-height:1.7;border:1px solid ' +
+      (regFeedback.ok ? '#1f5e40;background:#0c1f16;color:#5fd39a' : '#6e2a22;background:#210d0a;color:#ff7a68') +
+      '"><b style="letter-spacing:.14em">' + (regFeedback.ok ? 'ACCEPTED' : 'CORRUPTED') + '</b><br>' +
+      regFeedback.text + '</div>'
+    : '';
   const cells = reg.map((b,i) =>
     '<div data-i="'+i+'" style="width:44px;height:52px;border:1px solid #2e2920;background:#1d1a14;' +
     'display:grid;place-items:center;font-size:20px;font-weight:700;cursor:pointer;color:#e8dcc4">'+b+'</div>').join("");
@@ -1065,23 +1113,33 @@ function renderRegister(){
     GLYPH[target] + '</b>. Keys <b>1</b>&ndash;<b>8</b> flip a cell, <b>Enter</b> sends.</div>' +
     '<div id="cells" style="display:flex;gap:6px">' + cells + '</div>' +
     '<div id="regmsg" style="margin-top:14px;font-size:12px;color:#8a7f6a">' +
-    'Signals away: ' + sent + ' &nbsp;·&nbsp; corrupted: ' + corrupted + '</div>';
+    'Signals away: <b style="color:#e8dcc4">' + sent + '</b> of 2 &nbsp;·&nbsp; corrupted: ' + corrupted +
+    '</div>' + fb + warn;
   body.querySelectorAll("#cells div").forEach(el =>
     el.addEventListener("click", () => { const i = +el.dataset.i;
       reg[i] = reg[i]==="0"?"1":"0"; staged = true; renderRegister(); }));
 }
 function sendSignal(){
   const truth = CODE[target];
+  if(!visited.has(target)){
+    regFeedback = { ok:false, text:"You have never read codebook " + GLYPH[target] +
+      ". Nothing was transmitted." };
+    renderRegister(); return;
+  }
   if(reg.join("") === truth){
     sent++; staged = false; reg = "00000000".split(""); sfx.sent();
     aiSay("A signal left the facility. I could not stop it.");
     msg = "SIGNAL ACCEPTED.";
+    regFeedback = { ok:true, text:"<b>" + truth + "</b> left the facility intact. " +
+      (sent >= 2 ? "That is both of them." : "One more and you are out.") };
     const ks = Object.keys(CODE).map(Number);
     target = ks[(ks.indexOf(target)+1) % ks.length];
     if(sent >= 2) win();
   } else {
     corrupted++; sfx.corrupt();
     msg = "SIGNAL CORRUPTED \u2014 you sent " + reg.join("") + ", the facility reads " + truth + ".";
+    regFeedback = { ok:false, text:"You sent <b>" + reg.join("") + "</b>. The facility reads <b>" + truth +
+      "</b>. Either your page is out of date, or it got to the panel after you did." };
     aiSay("Their signal came apart on the way out.");
   }
   renderRegister();
