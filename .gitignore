@@ -2,3 +2,6 @@ out/*.pdf
 out/demo_shot*.png
 out/report.html
 __pycache__/
+
+# LibreOffice lock files (they embed your username and hostname)
+.~lock.*#
