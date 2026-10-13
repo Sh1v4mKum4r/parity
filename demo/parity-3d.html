@@ -1,3 +1,4 @@
+<meta charset="utf-8">
 <title>Parity Room Study</title>
 <style>
   :root{ --ink:#e8dcc4; --muted:#8a7f6a; --amber:#ffb545; --line:#2e2920;
@@ -225,7 +226,31 @@ function atCorner(cx,cz,i,rad){
   const ang = Math.PI/180*(60*i - 30);
   return [cx + rad*Math.cos(ang), cz + rad*Math.sin(ang)];
 }
-const roleOf = i => i===0 ? "uplink" : (i%3===1 ? "codebook" : "plain");
+// Every run is a new facility: the doors, and which rooms hold the codebooks,
+// come from one seed. ?seed=N pins it, for stills and for repeating a bug.
+const SEED_PARAM = new URLSearchParams(location.search).get("seed");
+// ?watch=1: Claude plays, live. ?rec=1: the same player on a fixed 1/30 s clock,
+// stepped from outside so a headless browser can capture every frame.
+const REC = new URLSearchParams(location.search).has("rec");
+const WATCH = REC || new URLSearchParams(location.search).has("watch");
+let botHook = null;                    // called at the top of every simulate step
+let facilitySeed = SEED_PARAM !== null ? (parseInt(SEED_PARAM, 10) >>> 0)
+                                       : (Math.random() * 4294967296) >>> 0;
+let frng = Math.random;
+function seedRng(s){ let x = s >>> 0; frng = () => (x = (x*1664525 + 1013904223) >>> 0) / 4294967296; }
+function shuffled(a){
+  const o = a.slice();
+  for(let i=o.length-1;i>0;i--){ const j = Math.floor(frng()*(i+1)); [o[i],o[j]] = [o[j],o[i]]; }
+  return o;
+}
+
+// role of each cell: the uplink is always the centre; six codebooks anywhere else
+const N_CODEBOOKS = 6;
+let ROLE = [];
+function assignRoles(){
+  const books = new Set(shuffled(CELLS.map((_,i)=>i).slice(1)).slice(0, N_CODEBOOKS));
+  ROLE = CELLS.map((_,i) => i===0 ? "uplink" : books.has(i) ? "codebook" : "plain");
+}
 
 function corner(cx,cz,i){
   const ang = Math.PI/180*(60*i - 30);
@@ -235,11 +260,12 @@ function corner(cx,cz,i){
 // Which shared walls actually have a doorway. A spanning tree guarantees the
 // facility is connected; a few extras give it loops, so route choice exists.
 const DOORS = new Set();
-(function planDoors(){
+function planDoors(){
+  DOORS.clear();
   const key=(q,r)=>q+","+r;
   const idx = new Map(CELLS.map((c,i)=>[key(c[0],c[1]), i]));
   const seen = new Set([0]), order=[0];
-  const rng = (()=>{ let s=99; return ()=>(s=(s*1664525+1013904223)>>>0)/4294967296; })();
+  const rng = frng;
   while(seen.size < CELLS.length){
     const from = order[Math.floor(rng()*order.length)];
     const [q,r] = CELLS[from];
@@ -262,10 +288,14 @@ const DOORS = new Set();
       }
     });
   }
-})();
+}
 const cellIndex = (q,r) => CELLS.findIndex(c=>c[0]===q && c[1]===r);
 const hasDoor = (a,b) => DOORS.has(a+"-"+b);
 
+// Bakes every room into the one scene buffer. Re-run on re-entry, because the
+// walls are where the doors are not.
+function buildRooms(){
+pos.length = 0; nrm.length = 0; shade.length = 0; DOORWAYS.length = 0;
 for(const [q,r] of CELLS){
   const me = cellIndex(q,r);
   const [cx,,cz] = cellCenter(q,r);
@@ -325,7 +355,7 @@ for(const [q,r] of CELLS){
   box(cx, H-0.30, cz-2.4, 2.2, 0.06, 0.06, 0.34);
   box(cx, H-0.30, cz+2.4, 2.2, 0.06, 0.06, 0.34);
 
-  const role = roleOf(me);
+  const role = ROLE[me];
   if(role === "uplink"){
     const [mx,mz] = atCorner(cx,cz,2,R*0.97);
     box(mx, 0.58, mz, 0.54, 0.58, 0.26, 0.40);        // transmitter cabinet
@@ -354,6 +384,12 @@ for(const [q,r] of CELLS){
   quad(p2,p3,[p3[0],hgt,p3[2]],[p2[0],hgt,p2[2]], 0.40);
   quad(p3,p0,[p0[0],hgt,p0[2]],[p3[0],hgt,p3[2]], 0.40);
 }
+}
+function newFacility(seed){
+  facilitySeed = seed >>> 0; seedRng(facilitySeed);
+  assignRoles(); planDoors(); buildRooms();
+}
+newFacility(facilitySeed);
 
 // ---------------------------------------------------------------- shaders
 function sh(type, src){
@@ -487,6 +523,8 @@ function makeReadout(kw, code, glyph){
 }
 const READOUT = {};
 function refreshReadouts(){
+  // a room that held a codebook last run may not hold one now
+  for(const k in READOUT) if(!(k in CODE)){ gl.deleteTexture(READOUT[k]); delete READOUT[k]; }
   for(const k in CODE){
     const i = +k;
     if(READOUT[i]) gl.deleteTexture(READOUT[i]);
@@ -503,42 +541,115 @@ function attrib(p, name, data, size){
   const loc = gl.getAttribLocation(p, name);
   gl.enableVertexAttribArray(loc);
   gl.vertexAttribPointer(loc, size, gl.FLOAT, false, 0, 0);
+  return b;
 }
-attrib(scene, "aPos", pos, 3);
-attrib(scene, "aNrm", nrm, 3);
-attrib(scene, "aShade", shade, 1);
-const VCOUNT = pos.length/3;
+const ROOMBUF = [attrib(scene, "aPos", pos, 3), attrib(scene, "aNrm", nrm, 3), attrib(scene, "aShade", shade, 1)];
+let VCOUNT = pos.length/3;
+function uploadRooms(){
+  [pos, nrm, shade].forEach((d,i) => {
+    gl.bindBuffer(gl.ARRAY_BUFFER, ROOMBUF[i]);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(d), gl.STATIC_DRAW);
+  });
+  VCOUNT = pos.length/3;
+}
 
-// the thing that hunts you: a tall, flat, wrong-looking slab
-const evao = gl.createVertexArray(); gl.bindVertexArray(evao);
-const ep=[], en=[], es=[];
-(function buildEntity(){
-  // A tall, thin, wrong-proportioned figure. Deliberately crude — this is a
-  // placeholder for a modelled character, but it reads as a person at a glance
-  // and the eye gives it a direction to be facing.
-  const box=(x0,y0,z0,x1,y1,z1,sh)=>{
-    const P=[[x0,y0,z0],[x1,y0,z0],[x1,y1,z0],[x0,y1,z0],[x0,y0,z1],[x1,y0,z1],[x1,y1,z1],[x0,y1,z1]];
-    const F=[[0,1,2,3],[5,4,7,6],[4,0,3,7],[1,5,6,2],[3,2,6,7],[4,5,1,0]];
-    const NRM=[[0,0,-1],[0,0,1],[-1,0,0],[1,0,0],[0,1,0],[0,-1,0]];
-    F.forEach((f,fi)=>{
-      [[0,1,2],[0,2,3]].forEach(t=>t.forEach(k=>{
-        ep.push(...P[f[k]]); en.push(...NRM[fi]); es.push(sh);
-      }));
-    });
-  };
-  const D = 0.30;                                  // it faces -Z
-  box(-0.17, 0.92, -0.10,  0.17, 2.02, 0.10, 0.34);   // torso, narrow and long
-  box(-0.13, 2.02, -0.11,  0.13, 2.34, 0.11, 0.26);   // head
-  box(-0.075, 2.13, -0.14,  0.075, 2.22, -0.11, 2.1); // the eye: self-lit, carries in the dark
-  box(-0.235, 1.06, -0.06, -0.17, 1.92, 0.06, 0.30);  // left arm
-  box( 0.17,  1.06, -0.06,  0.235, 1.92, 0.06, 0.30); // right arm
-  box(-0.145, 0.00, -0.07, -0.02, 0.94, 0.07, 0.28);  // left leg
-  box( 0.02,  0.00, -0.07,  0.145, 0.94, 0.07, 0.28); // right leg
+// ---------- the thing that hunts you: MIMIC ----------
+// It has no body, so it wears the only one it knows: its model of you. A point
+// cloud in your proportions, re-measured by a scan line, hollow where a face
+// would be -- it never needed to see -- and its feet never quite reach the floor.
+// Its rows tear sideways like a bad signal, hardest when it is coming for you.
+// A dim echo leans toward the room it expects you in next.
+const mimicProg = prog(`#version 300 es
+in vec3 aP; in vec3 aC; in float aS;
+uniform mat4 uVP; uniform vec3 uEye; out vec3 vC; out float vD;
+void main(){ gl_Position = uVP*vec4(aP,1.0); vD = distance(aP,uEye);
+  gl_PointSize = aS * clamp(4.2 / vD, 0.8, 3.0); vC = aC; }`,
+`#version 300 es
+precision highp float;
+in vec3 vC; in float vD; out vec4 frag;
+void main(){ float fog = 1.0 - exp(-vD * 0.072);
+  frag = vec4(mix(vC, vec3(0.020,0.019,0.017), fog*0.85), 1.0); }`);
+
+// sampled once, facing -Z: points on the surface of a body built from capsules
+const MIMIC = [];
+(function sampleMimic(){
+  const BODY = [ // a, b, radius, x-scale, z-scale
+    [[0,1.70,0],[0,1.70,0],0.118,1,1.08],
+    [[0,1.52,0],[0,1.60,0],0.050,1,1],
+    [[0,1.02,0],[0,1.40,0],0.165,1.18,0.66],
+    [[0,0.90,0],[0,1.00,0],0.140,1.1,0.7],
+    [[-0.255,1.42,0],[-0.285,1.08,0],0.052,1,1], [[0.255,1.42,0],[0.285,1.08,0],0.052,1,1],
+    [[-0.285,1.08,0],[-0.305,0.78,-0.03],0.045,1,1], [[0.285,1.08,0],[0.305,0.78,-0.03],0.045,1,1],
+    [[-0.10,0.90,0],[-0.11,0.48,0],0.072,1,1], [[0.10,0.90,0],[0.11,0.48,0],0.072,1,1],
+    [[-0.11,0.48,0],[-0.12,0.06,0],0.056,1,1], [[0.11,0.48,0],[0.12,0.06,0],0.056,1,1],
+  ];
+  let s = 7; const r = () => (s = (s*1664525 + 1013904223) >>> 0) / 4294967296;
+  const area = BODY.map(([a,b,rad]) => rad * (Math.hypot(b[0]-a[0],b[1]-a[1],b[2]-a[2]) + rad*2));
+  const tot = area.reduce((x,y)=>x+y, 0);
+  while(MIMIC.length < 1500){
+    let k = 0, u = r()*tot; while(u > area[k]) u -= area[k++];
+    const [a,b,rad,sx,sz] = BODY[k];
+    const t = r();
+    let dx = r()*2-1, dy = r()*2-1, dz = r()*2-1;
+    const ax = V.norm([b[0]-a[0], b[1]-a[1], b[2]-a[2]]);
+    if(k !== 0){ const d = dx*ax[0]+dy*ax[1]+dz*ax[2]; dx -= d*ax[0]; dy -= d*ax[1]; dz -= d*ax[2]; }
+    const l = Math.hypot(dx,dy,dz) || 1; dx/=l; dy/=l; dz/=l;
+    if(k === 0 && dz < -0.42 && dy > -0.55 && dy < 0.6) continue;     // no face
+    MIMIC.push({ x: a[0]+(b[0]-a[0])*t + dx*rad*sx, y: a[1]+(b[1]-a[1])*t + dy*rad,
+                 z: a[2]+(b[2]-a[2])*t + dz*rad*sz, nx: dx, nz: dz, s: r(), red: r() < 0.012 });
+  }
 })();
-attrib(scene, "aPos", ep, 3);
-attrib(scene, "aNrm", en, 3);
-attrib(scene, "aShade", es, 1);
-const ECOUNT = ep.length/3;
+const hash1 = n => { const v = Math.sin(n*127.1 + 311.7) * 43758.5453; return v - Math.floor(v); };
+const MAXP = MIMIC.length * 2;
+const MP = new Float32Array(MAXP*3), MC = new Float32Array(MAXP*3), MS = new Float32Array(MAXP);
+const evao = gl.createVertexArray(); gl.bindVertexArray(evao);
+const bMP = attrib(mimicProg, "aP", MP, 3), bMC = attrib(mimicProg, "aC", MC, 3), bMS = attrib(mimicProg, "aS", MS, 1);
+const ECOUNT = MIMIC.length;
+
+// Fills the buffers for this frame: world position ox,oz, turned by yaw (the
+// same rotation the scene shader uses), echo pushed along (edx,edz). `rage` is
+// 0 when it is wandering and 1 when it is in the room with you.
+function buildMimic(ox, oz, yaw, edx, edz, tNow, rage){
+  const c = Math.cos(yaw), s = Math.sin(yaw);
+  const sway  = Math.sin(tNow*0.7) * 0.02;
+  const scan  = 2.0 - ((tNow*(0.38 + rage*0.9)) % 1) * 2.3;
+  const tick  = Math.floor(tNow*14);
+  // row tearing, borrowed from VOID: every row drifts a little all the time;
+  // in a burst, or while it hunts you, whole bands are thrown sideways
+  const burst = ((tNow*0.5) % 1) < 0.09 || (rage > 0 && hash1(tick*0.37) < 0.35);
+  const tearAmp = 0.010 + rage*0.025 + (burst ? 0.16 : 0);
+  let n = 0;
+  const put = (lx, ly, lz, r, g, b, sz) => {
+    MP[n*3]   = lx*c + lz*s + ox; MP[n*3+1] = ly; MP[n*3+2] = -lx*s + lz*c + oz;
+    MC[n*3] = r; MC[n*3+1] = g; MC[n*3+2] = b; MS[n] = sz; n++;
+  };
+  for(let i=0;i<MIMIC.length;i++){
+    const p = MIMIC[i];
+    let x = p.x + sway*p.y*0.5, y = p.y, z = p.z;
+    // the feet never arrive: low points thin out and sink into the floor
+    if(y < 0.42){ if(p.s > y/0.42 + 0.08) continue; y -= ((tNow*0.25 + p.s) % 1) * 0.12; }
+    const j = 0.006 + rage*0.010;
+    x += (hash1(i*3.1+tick)-0.5)*j; y += (hash1(i*5.7+tick)-0.5)*j; z += (hash1(i*7.3+tick)-0.5)*j;
+    const row = Math.floor(y*26);
+    const big = burst && hash1(row*1.3 + tick + 3) > 0.72 ? 1 : 0.12;
+    x += (hash1(row + tick*0.61) - 0.5) * tearAmp * big * 2;
+    let k = 0.30 + 0.62*p.s*p.s, cr = 0.86*k, cg = 0.83*k, cb = 0.77*k, sz = 1.15;
+    const ds = Math.abs(y - scan);
+    if(ds < 0.05){ const w = 1 - ds/0.05; x += p.nx*0.035*w; z += p.nz*0.035*w;
+      cr += (1.0-cr)*w; cg += (0.71-cg)*w; cb += (0.27-cb)*w; sz = 2.0; }
+    if(p.red){ cr = 1.0; cg = 0.16; cb = 0.08; sz = 2.0; }
+    put(x, y, z, cr, cg, cb, sz);
+    if(i % 4 === 0){
+      // the echo is written in world space, so un-rotate its offset into local
+      const lx = edx*c - edz*s, lz = edx*s + edz*c;
+      put(x + lx, y, z + lz, cr*0.22, cg*0.22, cb*0.22, 1.2);
+    }
+  }
+  gl.bindBuffer(gl.ARRAY_BUFFER, bMP); gl.bufferData(gl.ARRAY_BUFFER, MP.subarray(0, n*3), gl.DYNAMIC_DRAW);
+  gl.bindBuffer(gl.ARRAY_BUFFER, bMC); gl.bufferData(gl.ARRAY_BUFFER, MC.subarray(0, n*3), gl.DYNAMIC_DRAW);
+  gl.bindBuffer(gl.ARRAY_BUFFER, bMS); gl.bufferData(gl.ARRAY_BUFFER, MS.subarray(0, n),   gl.DYNAMIC_DRAW);
+  return n;
+}
 
 // The sensor lamp: one small emissive cube, drawn once per doorway whose
 // detector is still wired. Cutting one simply stops it being drawn, so the
@@ -587,7 +698,8 @@ attrib(scene, "aShade", ds, 1);
 const DCOUNT = dp.length/3;
 
 // one panel per opening, not one per side
-const DOORSET = (() => {
+let DOORSET = [];
+function buildDoorSet(){
   const seen = new Set(), out = [];
   for(const d of DOORWAYS){
     const k = Math.min(d.a,d.b) + "-" + Math.max(d.a,d.b);
@@ -595,8 +707,9 @@ const DOORSET = (() => {
     seen.add(k);
     out.push({ x: d.x, z: d.z, yaw: Math.atan2(-d.uz, d.ux) });
   }
-  return out;
-})();
+  DOORSET = out;
+}
+buildDoorSet();
 let doorAmt = 0;                     // 0 sealed, 1 fully dropped
 let torchLevel = 1, emisLevel = 1;
 gl.bindVertexArray(null);
@@ -633,10 +746,10 @@ gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 
 // ---------------------------------------------------------------- the game
 const CC = CELLS.map(([q,r]) => { const c = cellCenter(q,r); return {x:c[0], z:c[2]}; });
-const GLYPH = "ABCDEFGH";
+const GLYPH = "ABCDEFGHIJKLMNOPQRS";   // one letter per room; there are 19
 const LOCKDOWN = 7.0, WINDOW = 3.0;
 let phase = "lock", timer = LOCKDOWN, curCell = 0, doorsOpen = false;
-let entityCell = 5, caught = 0, visited = new Set(), objective = 0, msg = "";
+let entityCell = farthestFrom(0), caught = 0, visited = new Set(), objective = 0, msg = "";
 
 // which doorways carry a sensor
 const wired = new Set();
@@ -647,20 +760,32 @@ function buildSensors(p){
 DOORWAYS.forEach((d,i) => { if(i % 3 !== 0) wired.add(d.a+"-"+d.b); });
 const isWired = (a,b) => wired.has(a+"-"+b) || wired.has(b+"-"+a);
 
-// role of each cell: codebooks to read, one uplink to transmit from
-const ROLE = CELLS.map((_,i) => roleOf(i));
-const KEYWORDS = ["HELP US","WARNING","MAYDAY","ALERT","CODE RED"];
+// codebooks to read (ROLE comes from the facility seed), one uplink to transmit from
+const KEYWORDS = ["HELP US","WARNING","MAYDAY","ALERT","CODE RED","BREACH"];
 const CODE = {}, KW = {};
-(function fillCodebooks(){
-  let s2 = 1337, k = 0;
-  const rr = () => (s2 = (s2*1664525 + 1013904223) >>> 0) / 4294967296;
+function fillCodebooks(){
+  for(const k in CODE) delete CODE[k];
+  for(const k in KW) delete KW[k];
+  const words = shuffled(KEYWORDS);
+  let k = 0;
   CELLS.forEach((_, i) => {
     if(ROLE[i] !== "codebook") return;
-    KW[i] = KEYWORDS[k++ % KEYWORDS.length];
-    CODE[i] = Array.from({length:8}, () => rr() < 0.5 ? "0" : "1").join("");
+    KW[i] = words[k++ % words.length];
+    CODE[i] = Array.from({length:8}, () => frng() < 0.5 ? "0" : "1").join("");
   });
-})();
-let target = Object.keys(CODE).map(Number)[0] ?? 0;   // the keyword being asked for
+}
+fillCodebooks();
+// The codebook you are sent for is one of the furthest from the uplink, so every
+// signal is a real trip out and back rather than a step next door.
+function pickTarget(avoid){
+  const up = ROLE.indexOf("uplink");
+  const ks = Object.keys(CODE).map(Number).filter(k => k !== avoid);
+  const d = ks.map(k => hopsBetween(up, k));
+  const far = Math.max(...d);
+  const pool = ks.filter((_,i) => d[i] >= far - 1);
+  return pool[Math.floor(frng()*pool.length)];
+}
+let target = pickTarget(-1);   // the keyword being asked for
 let reg = "00000000".split(""), staged = false, sent = 0, corrupted = 0;
 let mode = "play", cutting = null, prompt = "", dead = false, won = false, T_WINDOWS = 0, cuts = 0;
 // Demo mode detaches the door clock. Nothing happens while you stand still:
@@ -882,7 +1007,7 @@ function resolveWindow(){
     SCORE.flips++;
     aiSay("You are not at the uplink. I turned over one of the cells you staged.");
   }
-  searchSeen[entityCell] = performance.now();
+  searchSeen[entityCell] = t;
   entityCell = bfsStep(entityCell, tgt);
   // you hear it move before you ever see it; two rooms out it is just a suggestion
   const hops = hopsBetween(entityCell, curCell);
@@ -998,15 +1123,15 @@ function reenter(){
   dead = false; won = false; hunted = false; huntCell = -1; huntHold = 0;
   document.getElementById("dead").style.display = "none";
   document.getElementById("won").style.display = "none";
+  newFacility((Math.random() * 4294967296) >>> 0);
+  uploadRooms(); buildDoorSet();
   buildSensors(0.6);
-  for(const k in CODE){
-    const i = +k;
-    CODE[i] = Array.from({length:8}, () => Math.random() < 0.5 ? "0" : "1").join("");
-  }
+  fillCodebooks();
   refreshReadouts();
   visited.clear();
   sent = 0; corrupted = 0; reg = "00000000".split(""); staged = false;
-  target = Object.keys(CODE).map(Number)[0];
+  target = pickTarget(-1);
+  lastPred = null;            // its last call was about a building that no longer exists
   belief = CELLS.map(()=>1/CELLS.length);
   curCell = Math.floor(Math.random()*CELLS.length);   // dropped back in anywhere
   stepFrom = curCell; stepDoor = null;
@@ -1056,6 +1181,8 @@ function hudVisible(on){
 function openOverlay(kind){
   if(kind === "reg" && mode !== "reg") regFeedback = null;
   mode = kind;
+  // the panels are worked with the cursor: drawing, clicking bits
+  if(document.pointerLockElement) document.exitPointerLock();
   hudVisible(false);
   const ov = document.getElementById("overlay");
   ov.style.display = "flex";
@@ -1132,8 +1259,7 @@ function sendSignal(){
     msg = "SIGNAL ACCEPTED.";
     regFeedback = { ok:true, text:"<b>" + truth + "</b> left the facility intact. " +
       (sent >= 2 ? "That is both of them." : "One more and you are out.") };
-    const ks = Object.keys(CODE).map(Number);
-    target = ks[(ks.indexOf(target)+1) % ks.length];
+    target = pickTarget(target);
     if(sent >= 2) win();
   } else {
     corrupted++; sfx.corrupt();
@@ -1147,7 +1273,10 @@ function sendSignal(){
 
 addEventListener("keydown", e => {
   if(e.code === "Escape" && mode !== "play"){ closeOverlay(); e.preventDefault(); return; }
-  if(e.code === "Tab"){ e.preventDefault(); mode === "book" ? closeOverlay() : openOverlay("book"); return; }
+  if(e.code === "Tab"){ e.preventDefault();
+    // Tab is a real keypress, so the browser will let it take the mouse back; Esc never can
+    if(mode === "book"){ closeOverlay(); requestLock(); } else openOverlay("book");
+    return; }
   if(mode === "reg"){
     if(e.code.startsWith("Digit")){
       const i = +e.code.slice(5) - 1;
@@ -1216,7 +1345,7 @@ function bdraw(){
 // ---------------------------------------------------------------- camera
 const cam = { x:0, y:1.62, z:0, yaw:-0.6, pitch:0.02, bob:0 };
 const keys = {};
-addEventListener("keydown", e => { keys[e.code]=true;
+addEventListener("keydown", e => { if(!WATCH || !e.isTrusted) keys[e.code]=true;
   if(e.code.startsWith("Arrow")) e.preventDefault(); });
 addEventListener("keyup",   e => { keys[e.code]=false; });
 
@@ -1290,31 +1419,41 @@ const sfx = {
 
 const startEl = document.getElementById("start");
 const note = document.getElementById("note");
-let locked = false, dragging = false;
+let locked = false, mouseX = 0.5, mouseIn = false;
+const started = () => startEl.style.display === "none";
 
+// Pointer lock is the nicest way to look, but browsers refuse it often enough
+// (file:// in Firefox, a re-request just after Esc) that the game cannot depend
+// on it. Without it, plain mouse movement still steers, and holding the cursor
+// at the left or right edge of the screen keeps turning, so you never have to drag.
+function requestLock(){
+  if(!cv.requestPointerLock) return;
+  try { const r = cv.requestPointerLock(); if(r && typeof r.catch === "function") r.catch(() => {}); }
+  catch(e){}
+}
 function tryLock(){
   initAudio();
   startEl.style.display = "none";           // enter regardless of whether lock works
-  const r = cv.requestPointerLock && cv.requestPointerLock();
-  if(r && typeof r.catch === "function") r.catch(() => { locked = false; showFallback(); });
-  setTimeout(() => { if(document.pointerLockElement !== cv) showFallback(); }, 350);
+  if(WATCH) return;                         // Claude has the controls; you just watch
+  requestLock();
+  setTimeout(() => { if(document.pointerLockElement !== cv) showFallback(); }, 600);
 }
 function showFallback(){
-  note.textContent = "mouse capture unavailable — DRAG to look, or use ARROW KEYS";
+  note.textContent = "mouse not captured — just MOVE the mouse to look, hold it at a screen edge to keep turning, click to capture";
 }
 startEl.addEventListener("click", tryLock);
-cv.addEventListener("click", () => { if(!locked && !dragging) tryLock(); });
+cv.addEventListener("click", () => { if(!locked) tryLock(); });
 
 document.addEventListener("pointerlockchange", () => {
   locked = document.pointerLockElement === cv;
   if(locked) note.textContent = "";
+  else if(started()) showFallback();
 });
 document.addEventListener("pointerlockerror", showFallback);
 
-cv.addEventListener("mousedown", e => { if(!locked){ dragging = true; e.preventDefault(); } });
-addEventListener("mouseup", () => { dragging = false; });
-cv.addEventListener("mouseleave", () => { dragging = false; });
+cv.addEventListener("mousedown", e => { if(!locked) e.preventDefault(); });
 cv.addEventListener("contextmenu", e => e.preventDefault());
+document.documentElement.addEventListener("mouseleave", () => { mouseIn = false; });
 
 function look(dx, dy){
   cam.yaw   -= dx * 0.0022;
@@ -1322,10 +1461,18 @@ function look(dx, dy){
   cam.pitch = Math.max(-1.35, Math.min(1.35, cam.pitch));
 }
 addEventListener("mousemove", e => {
-  if(mode !== "play") return;
-  if(locked) look(e.movementX || 0, e.movementY || 0);
-  else if(dragging) look(e.movementX || 0, e.movementY || 0);
+  mouseX = e.clientX / Math.max(1, innerWidth); mouseIn = true;
+  if(mode !== "play" || !started() || WATCH) return;
+  look(e.movementX || 0, e.movementY || 0);
 });
+// unlocked, the cursor eventually meets the edge of the screen; past that point
+// movement stops being reported, so the edge itself turns you
+function edgeTurn(dt){
+  if(locked || !mouseIn || !started() || WATCH) return;
+  const EDGE = 0.06;
+  if(mouseX < EDGE)          cam.yaw += 2.4 * dt * (1 - mouseX/EDGE);
+  else if(mouseX > 1 - EDGE) cam.yaw -= 2.4 * dt * (1 - (1 - mouseX)/EDGE);
+}
 
 function insideFacility(x, z){
   // stay within the union of hex cells, with a little clearance for the walls
@@ -1339,9 +1486,11 @@ function insideFacility(x, z){
 let last = performance.now(), t = 0;
 function simulate(dt){
   t += dt;
+  if(botHook) botHook(dt);
 
   const frozen = (mode !== "play") || dead || won;   // reading or writing: you stop, the clock does not
   const turn = 1.9 * dt;
+  if(!frozen) edgeTurn(dt);
   if(!frozen && keys.ArrowLeft)  cam.yaw += turn;
   if(!frozen && keys.ArrowRight) cam.yaw -= turn;
   if(!frozen && keys.ArrowUp)    cam.pitch = Math.min(1.35, cam.pitch + turn*0.7);
@@ -1376,7 +1525,7 @@ function simulate(dt){
   // The building reacts. Emergency lights breathe slowly under lockdown and come
   // up hard while the doors are open; your torch stutters when it is near, which
   // is the only warning you get that does not come through the speakers.
-  const tNow = performance.now() * 0.001;
+  const tNow = t;                       // game time, so a recording plays at true speed
   const hopsNow = (dead || won) ? 9 : hopsBetween(entityCell, curCell);
   emisLevel = doorsOpen ? 1.55 : 0.72 + 0.28 * Math.sin(tNow * 1.9);
   let flick = 1.0;
@@ -1419,7 +1568,8 @@ function simulate(dt){
   }
   document.getElementById("obj3").textContent =
     (msg ? msg + "   ·   " : "") + "signals away " + sent + "/2" +
-    "   ·   need " + KW[target] + " from room " + GLYPH[target] +
+    (won ? "   ·   both signals are out"
+         : "   ·   need " + KW[target] + " from room " + GLYPH[target]) +
     (caught ? "   ·   taken " + caught + "x" : "");
   const pr = document.getElementById("prompt");
   const ptxt = currentPrompt();
@@ -1432,7 +1582,7 @@ function simulate(dt){
 }
 
 function frame(now){
-  const dt = Math.min((now-last)/1000, 0.05); last = now;
+  const dt = Math.max(0, Math.min((now-last)/1000, 0.05)); last = now;
   const bobY = simulate(dt);
 
   const eye = [cam.x, cam.y + bobY, cam.z];
@@ -1479,11 +1629,21 @@ function frame(now){
   const ec = CC[entityCell];
   const ex = hunted ? entW.x : ec.x - 1.5;
   const ez = hunted ? entW.z : ec.z - 1.2;
-  gl.uniform3f(gl.getUniformLocation(scene,"uOffset"), ex, 0, ez);
-  // the model faces -Z, so turning it to look at you is atan2(-dx, -dz)
-  gl.uniform1f(gl.getUniformLocation(scene,"uYaw"), Math.atan2(ex - cam.x, ez - cam.z));
+  // the model faces -Z, so turning it to look at you is atan2(dx, dz)
+  const eyaw = Math.atan2(ex - cam.x, ez - cam.z);
+  // its echo leans toward the room it expects you in next
+  let edx = 0, edz = 0;
+  if(lastPred !== null && lastPred !== entityCell){
+    const pc = CC[lastPred]; const dl = Math.hypot(pc.x - ex, pc.z - ez) || 1;
+    edx = (pc.x - ex) / dl * 0.55; edz = (pc.z - ez) / dl * 0.55;
+  }
+  const mn = buildMimic(ex, ez, eyaw, edx, edz, t, hunted ? 1 : 0);
+  gl.useProgram(mimicProg);
+  gl.uniformMatrix4fv(gl.getUniformLocation(mimicProg,"uVP"), false, new Float32Array(VP));
+  gl.uniform3fv(gl.getUniformLocation(mimicProg,"uEye"), new Float32Array(eye));
   gl.bindVertexArray(evao);
-  gl.drawArrays(gl.TRIANGLES, 0, ECOUNT);
+  gl.drawArrays(gl.POINTS, 0, mn);
+  gl.useProgram(scene);
 
   // the codebook panels, turned to face the reader
   gl.useProgram(texProg);
@@ -1502,7 +1662,7 @@ function frame(now){
 
   if(NOPOST){ const dg0 = document.getElementById("gldiag");
     if(dg0){ FRAMES++; dg0.textContent = DIAG + "\nFRAMES:  " + FRAMES + "  (post bypassed)"; }
-    requestAnimationFrame(frame); return; }
+    if(!REC) requestAnimationFrame(frame); return; }
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   const w = Math.max(1, cv.clientWidth || window.innerWidth);
   const h = Math.max(1, cv.clientHeight || window.innerHeight);
@@ -1525,10 +1685,10 @@ function frame(now){
   const dg = document.getElementById("gldiag");
   if(dg){ FRAMES++; dg.textContent = DIAG + "\nFRAMES:  " + FRAMES +
           "\nCANVAS:  " + cv.width + "x" + cv.height + " (client " + cv.clientWidth + "x" + cv.clientHeight + ")"; }
-  requestAnimationFrame(frame);
+  if(!REC) requestAnimationFrame(frame);   // a recording is stepped from outside instead
 }
 refreshReadouts();
-requestAnimationFrame(frame);
+if(!REC) requestAnimationFrame(frame);
 
 // ?warm=N draws N frames synchronously before the first paint. Headless Firefox
 // screenshots after a single frame, which is not enough for a software renderer.
@@ -1628,6 +1788,152 @@ if(_auto > 0){
   document.body.appendChild(el);
 }
 
+// ?watch=1 / ?rec=1 -- Claude plays, the way a person has to: walk to the
+// codebook it is sent for, read the panel, write the bits in the notebook, carry
+// them to the uplink and type them in. If the entity finds it, it runs for the
+// door furthest from it. If it is taken it goes back in, until it wins.
+if(WATCH){
+  const tag = document.createElement("div");
+  tag.textContent = "▶  CLAUDE IS PLAYING";
+  tag.style.cssText = "position:fixed;left:18px;bottom:16px;font-size:11px;letter-spacing:.2em;" +
+    "color:#ffb545;text-shadow:0 1px 3px #000;z-index:4;pointer-events:none";
+  document.body.appendChild(tag);
+  const go = document.querySelector("#start .go");
+  if(go) go.textContent = "CLICK TO WATCH CLAUDE PLAY";
+  if(REC) startEl.style.display = "none";
+
+  const W = { state:"travel", hold:0, known:{}, typing:-1, typeT:0, lastFlip:0, sending:false, sendT:0,
+              sentBefore:0, bits:"", writeT:0, written:0, rows:0, endT:0, stuck:0, px:cam.x, pz:cam.z };
+  window.__parityDone = false;
+  const wrapPi = d => { while(d > Math.PI) d -= 2*Math.PI; while(d < -Math.PI) d += 2*Math.PI; return d; };
+
+  // turn toward a point at a human rate; walk only once roughly facing it
+  function steer(ax, az, walk, run, dt, pitch){
+    const d = wrapPi(Math.atan2(-(ax - cam.x), -(az - cam.z)) - cam.yaw);
+    cam.yaw += Math.max(-3.4*dt, Math.min(3.4*dt, d * Math.min(1, dt*7)));
+    cam.pitch += ((pitch ?? 0.0) - cam.pitch) * Math.min(1, dt*4);
+    const facing = Math.abs(d) < 0.45;
+    keys.KeyW = !!(walk && facing);
+    keys.ShiftLeft = !!(keys.KeyW && run);
+    return facing;
+  }
+  // handwriting: a 0 is a loop, a 1 is a flagged stroke, each a little uneven
+  function writeBit(b, i){
+    const jit = () => (Math.random() - 0.5) * 2.2;
+    const x0 = 36 + i*30, top = 34 + W.rows*74, bot = top + 44, cx = x0 + 10;
+    const pts = [];
+    if(b === "0"){
+      for(let k=0;k<=16;k++){ const a = -Math.PI/2 + k/16*Math.PI*2.08;
+        pts.push({ x: cx + Math.cos(a)*9 + jit(), y: (top+bot)/2 + Math.sin(a)*21 + jit() }); }
+    } else {
+      pts.push({x:cx-7+jit(), y:top+10+jit()}, {x:cx+1, y:top+jit()});
+      for(let k=1;k<=6;k++) pts.push({ x: cx + 1 + jit()*0.5, y: top + k/6*44 });
+    }
+    pages[pg].push({pts});
+    sfx.write();
+    if(bctx) bdraw();
+  }
+
+  function watchStep(dt){
+    if(won){ keys.KeyW = false; W.endT += dt; if(W.endT > 5) window.__parityDone = true; return; }
+    if(dead){
+      keys.KeyW = false; W.hold += dt;
+      if(W.hold > 3.2){ W.hold = 0; W.known = {}; W.state = "travel"; W.sending = false; reenter(); }
+      return;
+    }
+    // in the room with it: forget everything else and take the door furthest from it
+    if(hunted){
+      W.state = "travel"; W.sending = false;
+      let best = null, bs = -1e9;
+      for(const n of neighboursOf(curCell)){
+        const dw = doorBetween(curCell, n); if(!dw) continue;
+        const sc = Math.hypot(dw.x - entW.x, dw.z - entW.z) - 0.6*Math.hypot(dw.x - cam.x, dw.z - cam.z);
+        if(sc > bs){ bs = sc; best = dw; }
+      }
+      if(best) steer(best.x, best.z, true, true, dt);
+      return;
+    }
+
+    if(W.state === "write"){
+      keys.KeyW = false; W.writeT += dt;
+      const due = Math.min(8, Math.floor(W.writeT / 0.16));
+      while(W.written < due){ writeBit(W.bits[W.written], W.written); W.written++; }
+      if(W.writeT > 8*0.16 + 1.0){ W.rows++; closeOverlay(); W.state = "travel"; }
+      return;
+    }
+
+    if(W.state === "type"){
+      keys.KeyW = false; W.typeT += dt;
+      const code = W.known[W.typing];
+      if(!W.sending){
+        if(W.typeT > 0.6 && W.typeT - W.lastFlip > 0.22){
+          const i = reg.findIndex((b,k) => b !== code[k]);
+          if(i >= 0){ reg[i] = code[i]; staged = true; renderRegister(); sfx.write(); W.lastFlip = W.typeT; }
+          else if(W.typeT - W.lastFlip > 0.6){ W.sending = true; W.sentBefore = sent; W.sendT = W.typeT; sendSignal(); }
+        }
+      } else if(W.typeT - W.sendT > 2.0){
+        // corrupted means the page it copied was rewritten behind it: go and read it again
+        if(sent === W.sentBefore) delete W.known[W.typing];
+        W.sending = false; closeOverlay(); W.state = "travel";
+      }
+      return;
+    }
+
+    // travel: to the codebook it still needs, or to the uplink with the bits in hand
+    const need = !(target in W.known);
+    const goal = need ? target : ROLE.indexOf("uplink");
+    const c = CC[curCell];
+    if(stepDoor){ steer(c.x, c.z, true, doorsOpen, dt); return; }   // clear the doorway first
+    if(curCell === goal){
+      if(need){
+        const dist = Math.hypot(c.x - cam.x, c.z - cam.z);
+        const facing = steer(c.x, c.z, dist > 2.3, false, dt, -0.05);
+        if(dist <= 2.45 && facing){
+          W.hold += dt;
+          if(W.hold > 1.5){
+            W.hold = 0; W.known[target] = CODE[target]; W.bits = CODE[target];
+            W.state = "write"; W.writeT = 0; W.written = 0; openOverlay("book");
+          }
+        }
+      } else {
+        W.state = "type"; W.typing = target; W.typeT = 0; W.lastFlip = 0; W.sending = false;
+        openOverlay("reg");
+      }
+      return;
+    }
+    const dw = doorBetween(curCell, bfsStep(curCell, goal));
+    if(!dw){ steer(c.x, c.z, false, false, dt); return; }
+    if(doorsOpen){
+      steer(dw.x, dw.z, true, true, dt);
+    } else {
+      // Sealed: wait near the middle of the room and scan it, as a nervous person
+      // would, then square up to the door it wants just before the window opens.
+      // Staring at the slab from close up just fills the screen with torchlit white.
+      const wx = c.x + (dw.x - c.x)*0.3, wz = c.z + (dw.z - c.z)*0.3;
+      if(Math.hypot(wx - cam.x, wz - cam.z) > 0.4) steer(wx, wz, true, false, dt);
+      else {
+        const base = Math.atan2(-(dw.x - cam.x), -(dw.z - cam.z));
+        const look = base + (timer < 1.3 ? 0 : Math.sin(t*0.6) * 1.15);
+        steer(cam.x - Math.sin(look)*3, cam.z - Math.cos(look)*3, false, false, dt, -0.03);
+      }
+    }
+    // shoved against geometry: back off a step
+    if(keys.KeyW && Math.hypot(cam.x - W.px, cam.z - W.pz) < 0.004){
+      if(++W.stuck > 45){ cam.x += (c.x - cam.x)*0.05; cam.z += (c.z - cam.z)*0.05; W.stuck = 0; }
+    } else W.stuck = 0;
+    W.px = cam.x; W.pz = cam.z;
+  }
+  botHook = watchStep;
+
+  if(REC){
+    let vt = performance.now(); last = vt;   // every step is exactly 1/30 s from the first
+    window.__parityStep = (n = 1) => {
+      for(let i=0;i<n;i++){ vt += 1000/30; frame(vt); }
+      return { done: window.__parityDone, t: Math.round(t*10)/10, sent, caught, won, dead, state: W.state };
+    };
+  }
+}
+
 // ?sim=N advances N windows with the player wandering, for stills and demos
 const _simN = parseInt(new URLSearchParams(location.search).get("sim") || "0", 10);
 if(_simN > 0){
@@ -1686,7 +1992,8 @@ if(new URLSearchParams(location.search).has("hunt")){
   startEl.style.display = "none";
   cam.x = CC[curCell].x + 1.4; cam.z = CC[curCell].z + 1.0; cam.yaw = 2.5;
   entityCell = curCell;
-  setTimeout(spot, 0);
+  // and turn to face it, so the still shows what is coming
+  setTimeout(() => { spot(); cam.yaw = Math.atan2(-(entW.x - cam.x), -(entW.z - cam.z)); }, 0);
 }
 
 // ?win=1 triggers the end-of-run success screen, for stills
