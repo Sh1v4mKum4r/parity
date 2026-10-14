@@ -190,11 +190,15 @@ const NB = [[1,0],[0,1],[-1,1],[-1,0],[0,-1],[1,-1]];
 
 function cellCenter(q,r){ return [R*1.732*(q + r/2), 0, R*1.5*r]; }
 
-const pos=[], nrm=[], shade=[];
+const pos=[], nrm=[], shade=[], mat=[];
 const DOORWAYS=[];
+// What a surface is made of, so the shader can weather each kind differently.
+// Everything built after setting MAT takes it on.
+const M_CONCRETE = 0, M_PAINT = 1, M_STEEL = 2, M_PHOSPHOR = 3;   // phosphor glows green, not red
+let MAT = M_CONCRETE;
 function tri(a,b,c,s,forceN){
   const n = forceN || V.norm(V.cross(V.sub(b,a), V.sub(c,a)));
-  for(const p of [a,b,c]){ pos.push(p[0],p[1],p[2]); nrm.push(n[0],n[1],n[2]); shade.push(s); }
+  for(const p of [a,b,c]){ pos.push(p[0],p[1],p[2]); nrm.push(n[0],n[1],n[2]); shade.push(s); mat.push(MAT); }
 }
 function quad(a,b,c,d,s){ tri(a,b,c,s); tri(a,c,d,s); }
 function quadN(a,b,c,d,s,n){ tri(a,b,c,s,n); tri(a,c,d,s,n); }
@@ -295,13 +299,14 @@ const hasDoor = (a,b) => DOORS.has(a+"-"+b);
 // Bakes every room into the one scene buffer. Re-run on re-entry, because the
 // walls are where the doors are not.
 function buildRooms(){
-pos.length = 0; nrm.length = 0; shade.length = 0; DOORWAYS.length = 0;
+pos.length = 0; nrm.length = 0; shade.length = 0; mat.length = 0; DOORWAYS.length = 0;
 for(const [q,r] of CELLS){
   const me = cellIndex(q,r);
   const [cx,,cz] = cellCenter(q,r);
   for(let i=0;i<6;i++){
     const a = corner(cx,cz,i), b = corner(cx,cz,(i+1)%6);
     // floor + ceiling fans
+    MAT = M_CONCRETE;
     tri([cx,0,cz], a, b, 0.42, [0,1,0]);
     tri([cx,H,cz], [b[0],H,b[2]], [a[0],H,a[2]], 0.20, [0,-1,0]);
 
@@ -321,68 +326,126 @@ for(const [q,r] of CELLS){
       // Its lamp is drawn separately each frame, and only while the sensor lives.
       let iw = cx-mx, iz2 = cz-mz; const iwl = Math.hypot(iw,iz2); iw/=iwl; iz2/=iwl;
       const hx2 = mx + iw*0.30, hz2 = mz + iz2*0.30, ly = DOOR_H + 0.30;
+      MAT = M_STEEL;
       box(hx2, ly, hz2, 0.17, 0.11, 0.11, 0.33);
       // the lamp sits proud of the housing, or it is simply buried inside it
       const lx = mx + iw*0.46, lz = mz + iz2*0.46;
       DOORWAYS.push({ a: me, b: other, x: mx, z: mz, ux, uz, lx, ly, lz });
+      MAT = M_CONCRETE;
       quad([a[0],0,a[2]], l1, [l1[0],H,l1[2]], [a[0],H,a[2]], 0.52);
       quad(r1, [b[0],0,b[2]], [b[0],H,b[2]], [r1[0],H,r1[2]], 0.52);
       quad([l1[0],DOOR_H,l1[2]], [r1[0],DOOR_H,r1[2]], [r1[0],H,r1[2]], [l1[0],H,l1[2]], 0.46);
-      // door jambs, so the opening reads as built rather than cut
+      // a steel frame, so the opening reads as built rather than cut
+      MAT = M_STEEL;
       const jd = 0.22;
       quad([l1[0],0,l1[2]], [l1[0]-uz*jd,0,l1[2]+ux*jd], [l1[0]-uz*jd,DOOR_H,l1[2]+ux*jd], [l1[0],DOOR_H,l1[2]], 0.62);
       quad([r1[0]-uz*jd,0,r1[2]+ux*jd], [r1[0],0,r1[2]], [r1[0],DOOR_H,r1[2]], [r1[0]-uz*jd,DOOR_H,r1[2]+ux*jd], 0.62);
+      quad([l1[0],DOOR_H,l1[2]], [r1[0],DOOR_H,r1[2]], [r1[0]-uz*jd,DOOR_H,r1[2]+ux*jd], [l1[0]-uz*jd,DOOR_H,l1[2]+ux*jd], 0.50);
     }
   }
-  // ---- dressing: pilasters, ribs, a fixture, and something that says what the
+  // ---- dressing: pilasters, rails, a fixture, and something that says what the
   // room is for. All of it static geometry baked into the one scene buffer.
+  MAT = M_CONCRETE;
   for(let i=0;i<6;i++){
     const [px,pz] = atCorner(cx,cz,i,R*0.98);
     box(px, H/2, pz, 0.15, H/2, 0.15, 0.42);
     box(px, H-0.13, pz, 0.21, 0.13, 0.21, 0.37);
+    box(px, 0.12, pz, 0.20, 0.12, 0.20, 0.36);              // a footing
   }
   for(let i=0;i<6;i++){
     const nb = NB[i];
     if(cellIndex(q+nb[0], r+nb[1]) >= 0 && hasDoor(me, cellIndex(q+nb[0], r+nb[1]))) continue;
     const a = corner(cx,cz,i), b = corner(cx,cz,(i+1)%6);
+    MAT = M_CONCRETE;
     ledge(cx,cz,a,b, 0.0,  0.26, 0.07, 0.40);   // skirting
-    ledge(cx,cz,a,b, 1.44, 1.56, 0.05, 0.47);   // rib
+    MAT = M_STEEL;
+    ledge(cx,cz,a,b, 1.44, 1.56, 0.05, 0.47);   // a steel rail at chest height
+    ledge(cx,cz,a,b, 0.34, 0.42, 0.12, 0.28);   // cable tray along the base
+    ledge(cx,cz,a,b, 3.02, 3.10, 0.10, 0.30);   // and another under the ceiling
   }
   // the fixture: a housing, and under it the strip that is actually alight
+  MAT = M_STEEL;
   box(cx, H-0.12, cz, 0.62, 0.12, 0.20, 0.34);
   box(cx, H-0.26, cz, 0.46, 0.03, 0.10, 1.22);
-  // conduit crossing the ceiling
+  box(cx-0.5, H-0.05, cz, 0.02, 0.05, 0.02, 0.30);         // its hangers
+  box(cx+0.5, H-0.05, cz, 0.02, 0.05, 0.02, 0.30);
+  // conduit crossing the ceiling, with junction boxes
   box(cx, H-0.30, cz-2.4, 2.2, 0.06, 0.06, 0.34);
   box(cx, H-0.30, cz+2.4, 2.2, 0.06, 0.06, 0.34);
+  box(cx-1.1, H-0.30, cz-2.4, 0.11, 0.11, 0.11, 0.30);
+  box(cx+0.9, H-0.30, cz+2.4, 0.11, 0.11, 0.11, 0.30);
 
   const role = ROLE[me];
   if(role === "uplink"){
-    const [mx,mz] = atCorner(cx,cz,2,R*0.97);
-    box(mx, 0.58, mz, 0.54, 0.58, 0.26, 0.40);        // transmitter cabinet
-    box(mx, 1.95, mz, 0.05, 0.75, 0.05, 0.46);        // mast up the wall
-    box(mx, 2.58, mz, 0.42, 0.04, 0.04, 0.46);        // crossbars
-    box(mx, 2.30, mz, 0.28, 0.04, 0.04, 0.46);
+    // The transmitter: a steel cabinet with a status screen, a rack beside it, and
+    // the mast up the wall. The screen itself is a live texture, drawn each frame.
+    const [mx,mz] = atCorner(cx,cz,2,R*0.97);              // against the +z wall, facing -z
+    const fz = mz - 0.28;                                   // its front face
+    MAT = M_STEEL;
+    box(mx, 0.06, mz, 0.60, 0.06, 0.32, 0.26);             // plinth
+    box(mx, 0.86, mz, 0.56, 0.74, 0.28, 0.40);             // cabinet
+    box(mx, 1.62, mz-0.05, 0.60, 0.03, 0.30, 0.46);        // lid lip
+    box(mx, 1.18, fz-0.012, 0.40, 0.27, 0.012, 0.22);      // screen bezel
+    for(let k=0;k<5;k++) box(mx, 0.30 + k*0.07, fz-0.01, 0.42, 0.012, 0.01, 0.24);  // vent slats
+    box(mx+0.62, 0.62, mz+0.02, 0.06, 0.62, 0.26, 0.30);   // cable riser beside it
+    box(mx-0.95, 0.60, mz+0.04, 0.30, 0.60, 0.24, 0.36);   // equipment rack
+    for(let k=0;k<4;k++) box(mx-0.95, 0.30 + k*0.24, mz-0.205, 0.26, 0.09, 0.01, 0.30);
+    box(mx, 2.30, mz+0.10, 0.05, 0.70, 0.05, 0.46);        // mast up the wall
+    box(mx, 2.88, mz+0.10, 0.42, 0.04, 0.04, 0.46);        // crossbars
+    box(mx, 2.58, mz+0.10, 0.28, 0.04, 0.04, 0.46);
+    box(mx+0.62, 2.36, mz+0.18, 0.04, 1.12, 0.04, 0.26);   // the feed, up to the ceiling
+    // status lights: green for a live link, one red for the one that watches it
+    MAT = M_PHOSPHOR;
+    for(let k=0;k<3;k++) box(mx-0.30 + k*0.08, 0.80, fz-0.012, 0.022, 0.016, 0.01, 1.55);
+    for(let k=0;k<4;k++) box(mx-0.82, 0.36 + k*0.24, mz-0.22, 0.018, 0.014, 0.01, 1.35);
+    MAT = M_CONCRETE;
+    box(mx+0.30, 0.80, fz-0.012, 0.022, 0.016, 0.01, 1.70);
   } else if(role === "codebook"){
     const [dx0,dz0] = atCorner(cx,cz,4,R*0.95);
-    box(dx0, 0.70, dz0, 0.80, 0.04, 0.32, 0.46);      // desk top
-    box(dx0-0.70, 0.35, dz0, 0.05, 0.35, 0.26, 0.36); // legs
-    box(dx0+0.70, 0.35, dz0, 0.05, 0.35, 0.26, 0.36);
-    box(dx0-0.26, 0.77, dz0, 0.22, 0.03, 0.15, 0.66); // paper left on it
+    MAT = M_PAINT;
+    box(dx0, 0.70, dz0, 0.80, 0.04, 0.32, 0.46);           // desk top
+    box(dx0+0.48, 0.34, dz0, 0.28, 0.32, 0.28, 0.38);      // drawer pedestal
+    for(let k=0;k<3;k++) box(dx0+0.48, 0.16 + k*0.2, dz0+0.285, 0.24, 0.07, 0.01, 0.30);
+    MAT = M_STEEL;
+    box(dx0-0.70, 0.35, dz0, 0.04, 0.35, 0.26, 0.36);      // legs
+    MAT = M_PAINT;
+    box(dx0-0.30, 0.77, dz0+0.02, 0.22, 0.03, 0.15, 0.66); // paper left on it
+    box(dx0-0.06, 0.745, dz0-0.10, 0.16, 0.005, 0.11, 0.62);
+    // a terminal, its tube still lit
+    box(dx0+0.30, 0.95, dz0-0.04, 0.22, 0.21, 0.20, 0.34);
+    box(dx0+0.30, 0.76, dz0-0.04, 0.14, 0.02, 0.12, 0.30);
+    MAT = M_PHOSPHOR;
+    box(dx0+0.30, 0.97, dz0+0.165, 0.17, 0.15, 0.008, 1.22);
+    box(dx0+0.525, 0.97, dz0-0.04, 0.008, 0.15, 0.15, 1.22);
   } else {
     const [k1,k2] = atCorner(cx,cz,3,R*0.95);
-    box(k1, 0.38, k2, 0.42, 0.38, 0.38, 0.40);        // crates
+    MAT = M_PAINT;
+    box(k1, 0.38, k2, 0.42, 0.38, 0.38, 0.40);             // crates
     box(k1+0.20, 1.00, k2-0.14, 0.27, 0.24, 0.27, 0.44);
+    // and a drum beside them, rusting
+    MAT = M_STEEL;
+    const [b1,b2] = atCorner(cx,cz,3,R*0.78);
+    for(let k=0;k<8;k++){
+      const a0 = k/8*Math.PI*2, a1 = (k+1)/8*Math.PI*2, rr = 0.30;
+      const A = [b1+Math.cos(a0)*rr, 0, b2+Math.sin(a0)*rr], B = [b1+Math.cos(a1)*rr, 0, b2+Math.sin(a1)*rr];
+      const nn = V.norm([Math.cos((a0+a1)/2), 0, Math.sin((a0+a1)/2)]);
+      quadN(A, B, [B[0],0.92,B[2]], [A[0],0.92,A[2]], 0.40, nn);
+      tri([b1,0.92,b2], [A[0],0.92,A[2]], [B[0],0.92,B[2]], 0.46, [0,1,0]);
+    }
   }
 
-  // a low plinth in the middle of each cell -- a console you can read
-  const s=0.85, hgt=0.62;
-  const c=[cx,0,cz];
-  const p0=[c[0]-s,0,c[2]-s], p1=[c[0]+s,0,c[2]-s], p2=[c[0]+s,0,c[2]+s], p3=[c[0]-s,0,c[2]+s];
-  quad([p0[0],hgt,p0[2]],[p1[0],hgt,p1[2]],[p2[0],hgt,p2[2]],[p3[0],hgt,p3[2]], 0.44);
-  quad(p0,p1,[p1[0],hgt,p1[2]],[p0[0],hgt,p0[2]], 0.40);
-  quad(p1,p2,[p2[0],hgt,p2[2]],[p1[0],hgt,p1[2]], 0.40);
-  quad(p2,p3,[p3[0],hgt,p3[2]],[p2[0],hgt,p2[2]], 0.40);
-  quad(p3,p0,[p0[0],hgt,p0[2]],[p3[0],hgt,p3[2]], 0.40);
+  // the console in the middle of each cell: a kick plate, a body, a steel top,
+  // and a strip that shows it is still on
+  MAT = M_CONCRETE;
+  box(cx, 0.05, cz, 0.76, 0.05, 0.76, 0.26);
+  MAT = M_PAINT;
+  box(cx, 0.33, cz, 0.84, 0.25, 0.84, 0.40);
+  MAT = M_STEEL;
+  box(cx, 0.61, cz, 0.90, 0.03, 0.90, 0.46);
+  for(let k=0;k<4;k++) box(cx - 0.45 + k*0.3, 0.30, cz + 0.845, 0.09, 0.12, 0.006, 0.24);   // vents
+  MAT = M_PHOSPHOR;
+  box(cx, 0.55, cz - 0.845, 0.50, 0.012, 0.006, 1.18);
+  MAT = M_CONCRETE;
 }
 }
 function newFacility(seed){
@@ -406,55 +469,134 @@ function prog(vs, fs){
 }
 
 const scene = prog(`#version 300 es
-in vec3 aPos; in vec3 aNrm; in float aShade;
+in vec3 aPos; in vec3 aNrm; in float aShade; in float aMat;
 uniform mat4 uVP; uniform vec3 uOffset; uniform float uYaw;
-out vec3 vPos; out vec3 vNrm; out float vShade;
+out vec3 vPos; out vec3 vNrm; out float vShade; out float vMat;
 void main(){
   float c = cos(uYaw), s = sin(uYaw);
   vec3 r = vec3(aPos.x*c + aPos.z*s, aPos.y, -aPos.x*s + aPos.z*c);
   vec3 n = vec3(aNrm.x*c + aNrm.z*s, aNrm.y, -aNrm.x*s + aNrm.z*c);
   vec3 w = r + uOffset;
-  vPos=w; vNrm=n; vShade=aShade;
+  vPos=w; vNrm=n; vShade=aShade; vMat=aMat;
   gl_Position = uVP * vec4(w,1.0);
 }`,
 `#version 300 es
 precision highp float;
-in vec3 vPos; in vec3 vNrm; in float vShade;
+in vec3 vPos; in vec3 vNrm; in float vShade; in float vMat;
 uniform vec3 uEye; uniform vec3 uDir;
 uniform float uTorch; uniform float uEmis;
+uniform vec3 uLamp[19];                 // each room's emergency strip
 out vec4 frag;
+
+// Surfaces are weathered procedurally, in metres of world space, so nothing tiles
+// and nothing needs a texture file. At this resolution it reads as grime, not noise.
+float h21(vec2 p){ vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
+float vn(vec2 p){ vec2 i = floor(p), f = fract(p); f = f*f*(3.0 - 2.0*f);
+  return mix(mix(h21(i), h21(i + vec2(1,0)), f.x), mix(h21(i + vec2(0,1)), h21(i + vec2(1,1)), f.x), f.y); }
+float fbm(vec2 p){ return 0.5*vn(p) + 0.3*vn(p*2.07 + 1.7) + 0.2*vn(p*4.13 + 5.1); }
+
 void main(){
   vec3 d = vPos - uEye;
   float dist = length(d);
   vec3 L = d / max(dist, 0.0001);
-  // handheld light: a tight cone with a soft falloff, the only real source
+  vec3 N0 = normalize(vNrm);
+  int mat = int(vMat + 0.5);
+  // shade above 1 marks a self-lit surface: the only things in here that glow
+  float emis = max(vShade - 1.0, 0.0);
+  float isEm = step(0.0001, emis);
+
+  // where on the surface this is: floor and ceiling by x,z; walls along their length
+  bool level = abs(N0.y) > 0.6;
+  vec2 tg = normalize(vec2(-N0.z, N0.x) + vec2(1e-4));
+  vec2 uv = level ? vPos.xz : vec2(dot(vPos.xz, tg), vPos.y);
+  float grain = fbm(uv * 2.6), fine = vn(uv * 19.0);
+
+  vec3 tint = vec3(0.74, 0.72, 0.68);
+  float tone = 1.0, gloss = 0.0;
+  if(mat == 0){
+    tone = 0.80 + 0.30*grain + 0.08*fine;                 // poured concrete, never quite even
+    if(N0.y > 0.6){                                       // floor: scuffed tiles, standing water
+      vec2 g = abs(fract(uv) - 0.5);
+      tone *= 1.0 - smoothstep(0.465, 0.5, max(g.x, g.y)) * 0.40;
+      tone *= 0.88 + 0.18 * h21(floor(uv));
+      float wet = smoothstep(0.58, 0.70, fbm(uv*0.45 + 7.3));
+      tone *= 1.0 - wet*0.45;
+      gloss = wet;
+    } else if(N0.y < -0.6){                               // ceiling: a tile grid
+      vec2 g = abs(fract(uv/1.2) - 0.5);
+      tone *= 1.0 - smoothstep(0.46, 0.5, max(g.x, g.y)) * 0.5;
+    } else {                                              // walls: cast panels, damp, streaks
+      tone *= 1.0 - smoothstep(0.47, 0.5, abs(fract(uv.x/1.25) - 0.5)) * 0.45;
+      float sv = min(abs(vPos.y - 1.15), abs(vPos.y - 2.35));
+      tone *= 1.0 - (1.0 - smoothstep(0.0, 0.022, sv)) * 0.35;
+      tone *= 1.0 - smoothstep(1.05, 0.0, vPos.y + (grain - 0.5)*0.6) * 0.45;   // rising damp
+      float streak = smoothstep(0.62, 0.9, vn(vec2(uv.x*6.0, uv.y*0.4 + 3.0)));
+      tone *= 1.0 - streak * 0.30 * smoothstep(0.4, 2.6, vPos.y);               // rust run-off
+    }
+  } else if(mat == 1){                                    // painted props: chipped and grimy
+    tint = vec3(0.71, 0.69, 0.62);
+    tone = (0.85 + 0.22*grain + 0.10*fine) * (1.0 - smoothstep(0.72, 0.8, vn(uv*7.0 + 11.0)) * 0.3);
+  } else if(mat == 2){                                    // steel: cold, rusting where it is wet
+    float rust = smoothstep(0.64, 0.86, fbm(uv*4.5 + 2.0)) * (0.55 + 0.45*fine);
+    tint = mix(vec3(0.60, 0.65, 0.69), vec3(0.50, 0.34, 0.24), rust*0.6);
+    tone = 0.84 + 0.14*fine + 0.10*grain;
+    gloss = (1.0 - rust) * 0.55;
+  }
+
+  vec3 N = N0;
+  if(dot(N, -L) < 0.0) N = -N;          // two-sided: never a black surface
+  // handheld light: a tight cone with a soft falloff
   float cone = dot(L, normalize(uDir));
   float spot = smoothstep(0.72, 0.955, cone);
   float atten = 1.0 / (1.0 + 0.11*dist + 0.026*dist*dist);
-  vec3 N = normalize(vNrm);
-  if(dot(N, -L) < 0.0) N = -N;          // two-sided: never a black surface
   float lambert = max(dot(N, -L), 0.0);
-  float spill = smoothstep(0.05, 0.75, cone) * atten * lambert * 0.85;  // torches spill
+  float spill = smoothstep(0.05, 0.75, cone) * atten * lambert * 0.85;
   float lit = (spot * atten * lambert * 3.2 + spill) * uTorch;
-  float ambient = 0.055 + 0.040 * lambert;      // enough to read on a projector
-  // shade above 1 marks a self-lit surface: the only thing in here that glows
-  float emis = max(vShade - 1.0, 0.0);
-  float isEm = step(0.0001, emis);              // an emissive surface takes no torchlight
-  vec3 concrete = vec3(0.74, 0.72, 0.68) * min(vShade, 1.0) * (1.0 - isEm);
-  vec3 col = concrete * (lit + ambient) + vec3(1.0, 0.10, 0.06) * emis * 3.4 * uEmis;
-  col += vec3(1.0, 0.86, 0.62) * lit * 0.16;    // warm tungsten bias
+  float ambient = 0.045 + 0.035 * lambert;
+
+  // The emergency strips: each room's own, red and weak. They light only their own
+  // room -- there are no shadows here, so without the cut-off they would bleed
+  // through walls. Wet floor and bare steel throw back a glint of them.
+  vec3 V = -L;
+  float red = 0.0, glint = 0.0, near = 99.0;
+  for(int i = 0; i < 19; i++){
+    vec3 lp = uLamp[i];
+    float rxz = length(vPos.xz - lp.xz);
+    near = min(near, rxz);
+    float own = smoothstep(4.3, 3.2, rxz);
+    if(own <= 0.0) continue;
+    vec3 Lt = lp - vPos; float dl = length(Lt); Lt /= dl;
+    float fall = own / (1.0 + 0.30*dl*dl);
+    red += max(dot(N, Lt), 0.0) * fall;
+    glint += pow(max(dot(N, normalize(Lt + V)), 0.0), 40.0) * fall * 6.0;
+  }
+  // dirt gathers where the floor meets the walls, and at the foot and head of every wall
+  float occl = 1.0;
+  if(N0.y > 0.6) occl = 1.0 - smoothstep(3.0, 3.95, near) * 0.5;
+  else if(!level) occl = 1.0 - smoothstep(0.7, 0.0, vPos.y) * 0.35 - smoothstep(2.9, 3.5, vPos.y) * 0.3;
+
+  vec3 base = tint * min(vShade, 1.0) * tone * (1.0 - isEm);
+  vec3 col = base * (lit + ambient) * occl;
+  col += base * vec3(1.0, 0.18, 0.09) * red * 1.25 * uEmis * occl;
+  col += vec3(1.0, 0.86, 0.62) * lit * 0.16 * tone;      // warm tungsten bias
+  col += vec3(1.0, 0.22, 0.12) * glint * gloss * 0.35 * uEmis;
+  col += vec3(1.0, 0.92, 0.78) * pow(lambert, 24.0) * spot * atten * uTorch * gloss * 0.9;
+  vec3 glow = mat == 3 ? vec3(0.30, 1.0, 0.55) : vec3(1.0, 0.10, 0.06);
+  col += glow * emis * 3.4 * uEmis;
   float fog = 1.0 - exp(-dist * 0.072);
   col = mix(col, vec3(0.020, 0.019, 0.017), fog * (1.0 - min(emis, 0.75)));
   frag = vec4(col, 1.0);
 }`);
 
-// retro pass: quantise, dither, vignette, scanline -- the whole art budget
+// retro pass: quantise, dither, vignette, scanline -- and the grit. Film grain,
+// a cheap lens that fringes at the edges, and when it is close, the picture itself
+// starts to slip: rows torn sideways, the same fault its body shows.
 const post = prog(`#version 300 es
 in vec2 aP; out vec2 vUv;
 void main(){ vUv = aP*0.5+0.5; gl_Position = vec4(aP,0.0,1.0); }`,
 `#version 300 es
 precision highp float;
-in vec2 vUv; uniform sampler2D uTex; uniform vec2 uRes; uniform float uTime;
+in vec2 vUv; uniform sampler2D uTex; uniform vec2 uRes; uniform float uTime; uniform float uGlitch;
 out vec4 frag;
 float bayer(vec2 p){
   int x = int(mod(p.x,4.0)), y = int(mod(p.y,4.0));
@@ -462,9 +604,16 @@ float bayer(vec2 p){
   float m[16] = float[16](0.,8.,2.,10., 12.,4.,14.,6., 3.,11.,1.,9., 15.,7.,13.,5.);
   return m[i]/16.0 - 0.5;
 }
+float h(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
 void main(){
-  vec3 c = texture(uTex, vUv).rgb;
-  vec2 px = vUv * uRes;
+  vec2 uv = vUv;
+  vec2 cell = floor(uv * uRes);
+  float tick = floor(uTime * 18.0);
+  uv.x += step(1.0 - 0.12*uGlitch, h(vec2(cell.y*0.37, tick))) * (h(vec2(cell.y, tick + 1.0)) - 0.5) * 0.08 * uGlitch;
+  vec2 off = (uv - 0.5) * (0.9 + 1.6*uGlitch) / uRes;
+  vec3 c = vec3(texture(uTex, uv + off).r, texture(uTex, uv).g, texture(uTex, uv - off).b);
+  vec2 px = uv * uRes;
+  c += (h(cell + fract(uTime) * vec2(91.7, 37.3)) - 0.5) * 0.045;   // grain
   c += bayer(px) * 0.055;                        // ordered dither before quantising
   float levels = 22.0;
   c = floor(c * levels + 0.5) / levels;
@@ -501,17 +650,28 @@ function makeReadout(kw, code, glyph){
   const c = document.createElement("canvas");
   c.width = 512; c.height = 256;
   const x = c.getContext("2d");
-  x.fillStyle = "#0d1410"; x.fillRect(0,0,512,256);
-  x.strokeStyle = "#1f3a2c"; x.lineWidth = 6; x.strokeRect(3,3,506,250);
-  x.fillStyle = "#4b7a62"; x.font = "600 26px ui-monospace, monospace";
-  x.fillText("CODEBOOK " + glyph, 26, 50);
+  x.fillStyle = "#07110c"; x.fillRect(0,0,512,256);
+  x.fillStyle = "#123323"; x.fillRect(0,0,512,30);                 // the terminal's own status bar
+  x.fillStyle = "#5fa37f"; x.font = "600 17px ui-monospace, monospace";
+  x.fillText("TERM-" + glyph + "  //  CODEBOOK " + glyph, 14, 21);
+  x.fillText("[REC]", 446, 21);
+  x.fillStyle = "#4b7a62"; x.font = "600 22px ui-monospace, monospace";
+  x.fillText("> KEYWORD", 26, 64);
   x.fillStyle = "#ffb545"; x.font = "700 40px ui-monospace, monospace";
-  x.fillText(kw, 26, 108);
+  x.fillText(kw, 26, 110);
   x.fillStyle = "#cfe9d8"; x.font = "700 56px ui-monospace, monospace";
   x.letterSpacing = "10px";
   x.fillText(code, 26, 186);
   x.fillStyle = "#4b7a62"; x.font = "400 19px ui-monospace, monospace";
   x.fillText("write it down \u2014 this panel can change", 26, 226);
+  x.letterSpacing = "0px";
+  x.fillStyle = "#cfe9d8"; x.fillRect(404, 148, 16, 40);              // the cursor, after the code
+  // a tube, not a sign: scanlines, and the corners falling off into the glass
+  x.fillStyle = "rgba(0,0,0,0.28)";
+  for(let y = 0; y < 256; y += 3) x.fillRect(0, y, 512, 1);
+  const vg = x.createRadialGradient(256, 128, 90, 256, 128, 300);
+  vg.addColorStop(0, "rgba(0,0,0,0)"); vg.addColorStop(1, "rgba(0,0,0,0.65)");
+  x.fillStyle = vg; x.fillRect(0, 0, 512, 256);
   const t = gl.createTexture();
   gl.bindTexture(gl.TEXTURE_2D, t);
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, c);
@@ -543,10 +703,12 @@ function attrib(p, name, data, size){
   gl.vertexAttribPointer(loc, size, gl.FLOAT, false, 0, 0);
   return b;
 }
-const ROOMBUF = [attrib(scene, "aPos", pos, 3), attrib(scene, "aNrm", nrm, 3), attrib(scene, "aShade", shade, 1)];
+const ROOMBUF = [attrib(scene, "aPos", pos, 3), attrib(scene, "aNrm", nrm, 3), attrib(scene, "aShade", shade, 1),
+                 attrib(scene, "aMat", mat, 1)];
+const A_MAT = gl.getAttribLocation(scene, "aMat");   // meshes without a material array read this constant
 let VCOUNT = pos.length/3;
 function uploadRooms(){
-  [pos, nrm, shade].forEach((d,i) => {
+  [pos, nrm, shade, mat].forEach((d,i) => {
     gl.bindBuffer(gl.ARRAY_BUFFER, ROOMBUF[i]);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(d), gl.STATIC_DRAW);
   });
@@ -698,6 +860,44 @@ attrib(scene, "aShade", ds, 1);
 const DCOUNT = dp.length/3;
 
 // one panel per opening, not one per side
+// The codebook monitor: a big industrial CRT on a neck, standing on the console.
+// Built facing +Z around the screen at z=0, then turned by uYaw like the screen.
+const mvao = gl.createVertexArray(); gl.bindVertexArray(mvao);
+const mp=[], mn=[], ms=[], mm=[];
+(function buildMonitor(){
+  const mbox = (cx,cy,cz,hx,hy,hz,sh,m) => {
+    const x0=cx-hx,x1=cx+hx,y0=cy-hy,y1=cy+hy,z0=cz-hz,z1=cz+hz;
+    const f = (a,b,c,d,n,k) => { for(const v of [a,b,c,a,c,d]){ mp.push(...v); mn.push(...n); ms.push(k); mm.push(m); } };
+    const S2 = v => sh > 1 ? sh : Math.min(v, 0.99);
+    f([x0,y1,z0],[x0,y1,z1],[x1,y1,z1],[x1,y1,z0],[0,1,0],S2(sh*1.12));
+    f([x0,y0,z0],[x1,y0,z0],[x1,y0,z1],[x0,y0,z1],[0,-1,0],S2(sh*0.55));
+    f([x0,y0,z1],[x1,y0,z1],[x1,y1,z1],[x0,y1,z1],[0,0,1],S2(sh));
+    f([x1,y0,z0],[x0,y0,z0],[x0,y1,z0],[x1,y1,z0],[0,0,-1],S2(sh*0.8));
+    f([x1,y0,z1],[x1,y0,z0],[x1,y1,z0],[x1,y1,z1],[1,0,0],S2(sh*0.9));
+    f([x0,y0,z0],[x0,y0,z1],[x0,y1,z1],[x0,y1,z0],[-1,0,0],S2(sh*0.9));
+  };
+  const SW = 1.08, SH = 0.58, SY = 1.60, B = 0.10, D = 0.07;     // screen half-size, bezel, bezel depth
+  mbox(0, SY+SH+B/2, 0, SW+B, B/2, D, 0.40, M_STEEL);            // bezel: top
+  mbox(0, SY-SH-0.11, 0, SW+B, 0.11, D, 0.40, M_STEEL);          //        chin, with the controls
+  mbox(-SW-B/2, SY, 0, B/2, SH, D, 0.40, M_STEEL);               //        sides
+  mbox( SW+B/2, SY, 0, B/2, SH, D, 0.40, M_STEEL);
+  mbox(0, SY, -0.05, SW, SH, 0.02, 0.10, M_STEEL);               // the dark glass behind the image
+  mbox(0, SY-0.02, -0.30, SW*0.86, SH*0.86, 0.24, 0.34, M_STEEL);  // the tube's housing
+  mbox(0, SY-0.04, -0.62, SW*0.55, SH*0.55, 0.10, 0.30, M_STEEL);
+  for(let k=0;k<6;k++) mbox(-0.5 + k*0.2, SY+SH*0.86+0.005, -0.30, 0.05, 0.005, 0.18, 0.18, M_STEEL);  // vents
+  mbox(0, 0.80, -0.30, 0.10, 0.17, 0.10, 0.36, M_STEEL);         // the neck
+  mbox(0, 0.655, -0.20, 0.55, 0.015, 0.36, 0.42, M_STEEL);       // its foot on the console
+  mbox(SW-0.12, SY-SH-0.11, D+0.004, 0.025, 0.018, 0.004, 1.6, M_PHOSPHOR);   // power light
+  for(let k=0;k<4;k++) mbox(SW-0.30-k*0.10, SY-SH-0.11, D+0.004, 0.03, 0.02, 0.006, 0.22, M_STEEL);  // knobs
+  mbox(-SW+0.30, SY-SH-0.11, D+0.002, 0.22, 0.03, 0.003, 0.55, M_PAINT);       // a maker's plate
+})();
+attrib(scene, "aPos", mp, 3); attrib(scene, "aNrm", mn, 3); attrib(scene, "aShade", ms, 1); attrib(scene, "aMat", mm, 1);
+const MCOUNT = mp.length/3;
+gl.bindVertexArray(null);
+// each monitor swivels after you on its neck, a beat behind, the way a camera would
+const MONYAW = {};
+let MONFREEZE = false;              // stills only: hold a monitor where it was put
+
 let DOORSET = [];
 function buildDoorSet(){
   const seen = new Set(), out = [];
@@ -711,20 +911,57 @@ function buildDoorSet(){
 }
 buildDoorSet();
 let doorAmt = 0;                     // 0 sealed, 1 fully dropped
-let torchLevel = 1, emisLevel = 1;
+let torchLevel = 1, emisLevel = 1, glitch = 0;
 gl.bindVertexArray(null);
 
 const qvao = gl.createVertexArray(); gl.bindVertexArray(qvao);
 attrib(post, "aP", [-1,-1, 3,-1, -1,3], 2);
 gl.bindVertexArray(null);
 
-const qw = 1.30, qh = 0.65, qy = 1.30;     // panel size and height off the floor
+const qw = 1.08, qh = 0.58, qy = 1.60;     // screen size and centre height, inside the monitor's bezel
 const tvao = gl.createVertexArray(); gl.bindVertexArray(tvao);
 attrib(texProg, "aPos", [
   -qw, qy-qh, 0,  qw, qy-qh, 0,  qw, qy+qh, 0,
   -qw, qy-qh, 0,  qw, qy+qh, 0, -qw, qy+qh, 0], 3);
 attrib(texProg, "aUV", [0,1, 1,1, 1,0, 0,1, 1,0, 0,0], 2);
 gl.bindVertexArray(null);
+
+// The uplink's own screen: smaller, fixed to the cabinet, redrawn a few times a
+// second with the link's state -- and with what the thing listening on it thinks.
+const uw = 0.36, uh = 0.23;
+const uvao = gl.createVertexArray(); gl.bindVertexArray(uvao);
+attrib(texProg, "aPos", [-uw,-uh,0, uw,-uh,0, uw,uh,0, -uw,-uh,0, uw,uh,0, -uw,uh,0], 3);
+attrib(texProg, "aUV", [0,1, 1,1, 1,0, 0,1, 1,0, 0,0], 2);
+gl.bindVertexArray(null);
+const upCanvas = document.createElement("canvas"); upCanvas.width = 256; upCanvas.height = 164;
+const upTex = gl.createTexture();
+gl.bindTexture(gl.TEXTURE_2D, upTex);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+let upDrawnAt = -1;
+function drawUplinkScreen(){
+  const x = upCanvas.getContext("2d"), W2 = upCanvas.width, H2 = upCanvas.height;
+  x.fillStyle = "#04100a"; x.fillRect(0, 0, W2, H2);
+  x.strokeStyle = "#1c4430"; x.lineWidth = 4; x.strokeRect(2, 2, W2-4, H2-4);
+  x.font = "600 15px ui-monospace, monospace";
+  x.fillStyle = "#4fd08a"; x.fillText("UPLINK // TX-7", 12, 24);
+  x.fillStyle = "#2f8a5c"; x.fillText("SIGNALS OUT  " + sent + "/2", 12, 46);
+  x.fillText("DOORS  " + (doorsOpen ? "OPEN" : "SEALED"), 12, 66);
+  // carrier: bars that never quite settle
+  for(let i = 0; i < 14; i++){
+    const v = 0.25 + 0.75 * Math.abs(Math.sin(t*2.3 + i*0.9) * Math.cos(t*0.7 + i*1.7));
+    x.fillStyle = i < 3 + sent*4 ? "#5fe39c" : "#1d5a3b";
+    x.fillRect(14 + i*16, 112 - v*36, 10, v*36);
+  }
+  // and the line that should not be on a radio's screen
+  const conf = Math.round(beliefConf()*100);
+  x.fillStyle = conf >= 40 ? "#ff5a3c" : "#7a2a1e";
+  x.fillText("LISTENER  " + conf + "%" + (Math.floor(t*2) % 2 ? " _" : ""), 12, 142);
+  gl.bindTexture(gl.TEXTURE_2D, upTex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, upCanvas);
+}
 
 // low-res render target: the resolution IS the art direction
 const LOW_W = 420, LOW_H = 236;
@@ -746,6 +983,8 @@ gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 
 // ---------------------------------------------------------------- the game
 const CC = CELLS.map(([q,r]) => { const c = cellCenter(q,r); return {x:c[0], z:c[2]}; });
+// each room's emergency strip, as the scene shader's light list
+const LAMPS = new Float32Array(CC.flatMap(c => [c.x, H - 0.3, c.z]));
 const GLYPH = "ABCDEFGHIJKLMNOPQRS";   // one letter per room; there are 19
 const LOCKDOWN = 7.0, WINDOW = 3.0;
 let phase = "lock", timer = LOCKDOWN, curCell = 0, doorsOpen = false;
@@ -1137,6 +1376,7 @@ function reenter(){
   stepFrom = curCell; stepDoor = null;
   cam.x = CC[curCell].x + 2.0; cam.z = CC[curCell].z + 1.6;
   searchSeen = {};
+  for(const k in MONYAW) delete MONYAW[k];
   entityCell = farthestFrom(curCell);
   grace = 1;
   phase = "lock"; timer = LOCKDOWN; doorsOpen = false;
@@ -1532,6 +1772,8 @@ function simulate(dt){
   if(hunted)            flick = 0.55 + 0.45 * Math.abs(Math.sin(tNow * 23.0));
   else if(hopsNow <= 1) flick = 0.86 + 0.14 * Math.sin(tNow * 13.0) * (Math.random() < 0.5 ? 1 : 0.2);
   torchLevel += (flick - torchLevel) * Math.min(1, dt * 18);
+  // and the picture starts to slip when it is near: a little next door, badly in the room
+  glitch += ((hunted ? 1 : hopsNow <= 1 ? 0.3 : 0) - glitch) * Math.min(1, dt * 5);
 
   huntStep(dt);
   if(hunted) doorsOpen = true;          // you are never sealed in with it
@@ -1606,15 +1848,32 @@ function frame(now){
   gl.uniform1f(gl.getUniformLocation(scene,"uYaw"), 0);
   gl.uniform1f(gl.getUniformLocation(scene,"uTorch"), torchLevel);
   gl.uniform1f(gl.getUniformLocation(scene,"uEmis"),  emisLevel);
+  gl.uniform3fv(gl.getUniformLocation(scene,"uLamp"), LAMPS);
   gl.bindVertexArray(vao);
   gl.drawArrays(gl.TRIANGLES, 0, VCOUNT);
 
-  // the doors
+  // the doors, in steel
+  gl.vertexAttrib1f(A_MAT, M_STEEL);
   gl.bindVertexArray(dvao);
   for(const d of DOORSET){
     gl.uniform1f(gl.getUniformLocation(scene,"uYaw"), d.yaw);
     gl.uniform3f(gl.getUniformLocation(scene,"uOffset"), d.x, -DOOR_H*doorAmt, d.z);
     gl.drawArrays(gl.TRIANGLES, 0, DCOUNT);
+  }
+
+  // the codebook monitors, each turned to wherever it has got to in following you
+  gl.bindVertexArray(mvao);
+  for(const k in READOUT){
+    const c = CC[+k];
+    const want = Math.atan2(cam.x - c.x, cam.z - c.z);
+    if(MONYAW[k] === undefined) MONYAW[k] = want;
+    let dY = want - MONYAW[k];
+    while(dY > Math.PI) dY -= 2*Math.PI;
+    while(dY < -Math.PI) dY += 2*Math.PI;
+    if(!MONFREEZE) MONYAW[k] += dY * Math.min(1, dt * 2.2);
+    gl.uniform1f(gl.getUniformLocation(scene,"uYaw"), MONYAW[k]);
+    gl.uniform3f(gl.getUniformLocation(scene,"uOffset"), c.x, 0, c.z);
+    gl.drawArrays(gl.TRIANGLES, 0, MCOUNT);
   }
 
   // live sensors, one draw each; a cut one is simply absent
@@ -1625,6 +1884,7 @@ function frame(now){
     gl.uniform3f(gl.getUniformLocation(scene,"uOffset"), d.lx, d.ly, d.lz);
     gl.drawArrays(gl.TRIANGLES, 0, LCOUNT);
   }
+  gl.vertexAttrib1f(A_MAT, M_CONCRETE);
 
   const ec = CC[entityCell];
   const ex = hunted ? entW.x : ec.x - 1.5;
@@ -1645,7 +1905,7 @@ function frame(now){
   gl.drawArrays(gl.POINTS, 0, mn);
   gl.useProgram(scene);
 
-  // the codebook panels, turned to face the reader
+  // the codebook screens, set into their monitors
   gl.useProgram(texProg);
   gl.uniformMatrix4fv(gl.getUniformLocation(texProg,"uVP"), false, new Float32Array(VP));
   gl.uniform1i(gl.getUniformLocation(texProg,"uTex"), 0);
@@ -1653,11 +1913,19 @@ function frame(now){
   for(const k in READOUT){
     const i = +k, c = CC[i];
     gl.uniform3f(gl.getUniformLocation(texProg,"uOffset"), c.x, 0, c.z);
-    // the quad faces +Z, so it is the opposite sign to the entity
-    gl.uniform1f(gl.getUniformLocation(texProg,"uYaw"), Math.atan2(cam.x - c.x, cam.z - c.z));
+    // the quad faces +Z, so it is the opposite sign to the entity; it turns with its monitor
+    gl.uniform1f(gl.getUniformLocation(texProg,"uYaw"), MONYAW[k] ?? Math.atan2(cam.x - c.x, cam.z - c.z));
     gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, READOUT[i]);
     gl.drawArrays(gl.TRIANGLES, 0, 6);
   }
+  // the uplink's screen, set into the cabinet's face
+  if(upDrawnAt < 0 || t - upDrawnAt > 0.15 || t < upDrawnAt){ drawUplinkScreen(); upDrawnAt = t; }
+  const uc = CC[ROLE.indexOf("uplink")];
+  gl.bindVertexArray(uvao);
+  gl.uniform3f(gl.getUniformLocation(texProg,"uOffset"), uc.x, 1.18, uc.z + R*0.97 - 0.31);
+  gl.uniform1f(gl.getUniformLocation(texProg,"uYaw"), Math.PI);   // the quad faces +Z; this one faces back into the room
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, upTex);
+  gl.drawArrays(gl.TRIANGLES, 0, 6);
   gl.useProgram(scene);
 
   if(NOPOST){ const dg0 = document.getElementById("gldiag");
@@ -1674,6 +1942,7 @@ function frame(now){
   gl.uniform1i(gl.getUniformLocation(post,"uTex"), 0);
   gl.uniform2f(gl.getUniformLocation(post,"uRes"), LOW_W, LOW_H);
   gl.uniform1f(gl.getUniformLocation(post,"uTime"), t);
+  gl.uniform1f(gl.getUniformLocation(post,"uGlitch"), glitch);
   gl.bindVertexArray(qvao);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
 
@@ -2012,6 +2281,19 @@ if(new URLSearchParams(location.search).has("peek")){
   cam.x = CC[c].x + 0.2; cam.z = CC[c].z + 3.4; cam.y = 1.62;
   cam.yaw = Math.atan2(cam.x - CC[c].x, cam.z - CC[c].z);
   cam.pitch = -0.02;
+  for(const k in MONYAW) delete MONYAW[k];   // you were put here, not walked here
+}
+
+// ?mon=1 stands you off to one side of a codebook monitor that has not yet turned
+// to follow you, so a still shows its housing and its neck, not just its face
+if(new URLSearchParams(location.search).has("mon")){
+  startEl.style.display = "none";
+  const c = CELLS.findIndex((_,i)=>ROLE[i]==="codebook");
+  curCell = c;
+  cam.x = CC[c].x + 2.9; cam.z = CC[c].z + 2.1; cam.y = 1.62;
+  cam.yaw = Math.atan2(cam.x - CC[c].x, cam.z - CC[c].z);
+  cam.pitch = -0.06;
+  MONYAW[c] = 0.15; MONFREEZE = true;
 }
 
 // ?ov=code|reg|book opens an overlay directly, for stills and for demoing
