@@ -519,6 +519,53 @@ Four attempts to improve it — including an explicit first-visit feature — al
 it worse. Each split the context and lost more to data sparsity than it gained in
 signal. This is the clearest open problem in the project.
 
+### 5.9b Does it get better at catching you the more you play? *(new)*
+
+![Captures across consecutive sessions](../out/fig_sessions.png)
+
+The game tells the player, on every death screen, that *"your pages survive, so
+does its model of you."* That claim had never been measured. E13 measures it: one
+player plays twelve consecutive sessions, everything resets between runs except
+the predictor, which keeps what it learned.
+
+The arm that matters is the **control**, which wipes the model between sessions.
+Without it a trend proves nothing — captures could drift because the scripted
+player settles into a route, not because the antagonist learned it. The control
+isolates retained learning as the only difference between the two lines.
+
+| Condition | First 3 sessions | Last 3 sessions | Change |
+|---|---|---|---|
+| Same building, keeps its model | 538 | 575 | **+6.9%** |
+| Same building, forgets *(control)* | 507 | 505 | -0.3% |
+| Rewired building, keeps its model | 496 | 424 | **-14.5%** |
+| Rewired building, forgets *(control)* | 517 | 519 | +0.3% |
+
+*Captures per 1000 moves, mean of 12 seeds, 12 sessions of 400 moves each.*
+
+**It does get better, but only if the building stays put.** Returning to the same
+facility, captures rise +6.9% from the first three sessions to the last, while the
+control stays flat within noise (-0.3%). The antagonist is genuinely accumulating
+a model of this player across runs, and the player is measurably worse off on
+their twelfth visit than their first.
+
+**Carrying that model into a rewired facility is worse than forgetting.** When the
+building is regenerated between runs — which is what the shipped game does —
+retained learning costs 14% of captures against a flat control. The reason is
+structural rather than statistical: the model is keyed on room indices, and
+rewiring changes what an index means. Its contexts are not wrong so much as
+about a building that no longer exists, and it takes most of a session to
+unlearn them.
+
+This is a result about the design as much as the model. The line the game
+delivers at its most dramatic moment is, as shipped, false: the facility
+regenerates on re-entry, which is precisely the condition where memory hurts.
+Two honest ways to close the gap, both now on the roadmap — persist the facility
+across a run of sessions so the retained model is about a building that still
+exists, or re-key the predictor on facility-invariant features (door degree,
+distance-to-objective, turn direction) so that what it learns about a player
+transfers between buildings. The second is the more interesting research
+question and the one that would make the claim true in general.
+
 ### 5.10 Invariant test suite
 
 Nine invariants asserted over 25 generated facilities and thousands of simulated
@@ -674,14 +721,16 @@ player can spend three windows to cut.
 | M5 | Human playtest; replace scripted players with real traces | Next |
 | M7 | Polygonal room tiles, side count as the difficulty setting | Planned |
 | M8 | Outbound register with pre-send tampering, in 3D | Planned |
+| M9 | Facility-invariant features, so a model of a player transfers between buildings | **Opened by §5.9b** |
 
 M6 was taken ahead of the engine port because the evidence pointed at it: the
 negative result in §5.7's predecessor identified perfect observation as the reason
 waiting was not a defence, and fixing the observation model was worth more than
 better rendering.
 
-The clearest open problems are **predicting when the player stops to write** (§5.9)
-and **replacing the simulated player with human traces** (M5). Every behavioural
+The clearest open problems are **predicting when the player stops to write** (§5.9),
+**making retained learning survive a rewired facility** (§5.9b, M9) and
+**replacing the simulated player with human traces** (M5). Every behavioural
 parameter in this report — the deviation rate, the writing model — is currently an
 assumption, and the playtest is what turns them into measurements.
 

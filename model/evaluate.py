@@ -596,6 +596,70 @@ def e12_counterplay(coverages=(1.0, 0.6, 0.3), steps=1500):
     return out
 
 
+def e13_across_sessions(bot_name="habitual", sessions=12, steps=400):
+    """Does it actually get better at catching you the more you play?
+
+    The game tells the player "your pages survive, so does its model of you".
+    That claim has never been tested. Here one player plays `sessions`
+    consecutive runs. Everything resets between runs except the predictor,
+    which keeps what it learned.
+
+    Two worlds, because the answer differs and the difference is the point:
+
+      "same-facility"  the player comes back to the same building
+      "new-facility"   the building is rewired between runs, as the game does
+
+    And for each, a control that wipes the model between sessions. Without the
+    control a downward trend proves nothing -- it could be the bot settling into
+    a route rather than the model learning it.
+    """
+    out = {}
+    for world in ("same-facility", "new-facility"):
+        for arm in ("remembers", "control-wiped"):
+            # per session index, captures per 1000 moves, averaged over seeds
+            curves = []
+            for seed in range(SEEDS):
+                model = _make_model("vomm")
+                row = []
+                for sess in range(sessions):
+                    fseed = seed if world == "same-facility" else seed * 1000 + sess
+                    fac = Facility(10, seed=fseed)
+                    bot = BOTS[bot_name](fac, seed=seed + 100 + sess)
+                    if arm == "control-wiped":
+                        model = _make_model("vomm")      # forgets between runs
+                    d = ModelDirector(model)
+                    hist, caught, n = [bot.pos], 0, 0
+                    rng = random.Random(seed * 31 + sess)
+                    for _ in range(steps):
+                        cands = opts(fac, hist[-1])
+                        if not cands:
+                            break
+                        ambush = d.choose_ambush(hist[-CTX:], cands)
+                        actual = bot.step()
+                        bot.resync(actual)
+                        n += 1
+                        if actual == ambush:
+                            caught += 1
+                            actual = rng.choice(list(fac.rooms))
+                            bot.resync(actual)
+                        d.model.observe(hist[-CTX:], actual)
+                        hist.append(actual)
+                    row.append(1000.0 * caught / max(n, 1))
+                curves.append(row)
+            mean = [statistics.mean(c[i] for c in curves) for i in range(sessions)]
+            sd = [statistics.pstdev([c[i] for c in curves]) for i in range(sessions)]
+            first3 = statistics.mean(mean[:3])
+            last3 = statistics.mean(mean[-3:])
+            out[world + "/" + arm] = {
+                "per_session": [round(v, 1) for v in mean],
+                "sd": [round(v, 1) for v in sd],
+                "first_3": round(first3, 1),
+                "last_3": round(last3, 1),
+                "change_pct": round(100.0 * (last3 - first3) / first3, 1) if first3 else None,
+            }
+    return out
+
+
 def main():
     res = {
         "config": {"rooms": 10, "steps": STEPS, "seeds": SEEDS, "context": CTX},
@@ -612,6 +676,7 @@ def main():
         "e10_dwell_learned": e10_dwell_learned(),
         "e11_localisation": e11_localisation(),
         "e12_counterplay": e12_counterplay(),
+        "e13_across_sessions": e13_across_sessions(),
     }
     out = Path(__file__).parent.parent / "out"
     out.mkdir(exist_ok=True)
@@ -628,6 +693,7 @@ def main():
     print("E10 dwell learned:", json.dumps(res["e10_dwell_learned"]))
     print("E11 localisation :", json.dumps(res["e11_localisation"], indent=2))
     print("E12 counter-play :", json.dumps(res["e12_counterplay"], indent=2))
+    print("E13 across sessions:", json.dumps(res["e13_across_sessions"], indent=2))
     return res
 
 

@@ -241,6 +241,43 @@ def fig_training(out):
     fig.tight_layout(); fig.savefig(out, dpi=200); plt.close(fig)
 
 
+def fig_sessions(out):
+    """Captures per 1000 moves across consecutive sessions, with the control
+    that makes the trend mean something."""
+    E = M["e13_across_sessions"]
+    fig, axes = plt.subplots(1, 2, figsize=(10.4, 4.1), sharey=True)
+    panels = [
+        ("same-facility", "Same building each time", axes[0]),
+        ("new-facility",  "Building rewired between runs", axes[1]),
+    ]
+    for world, title, ax in panels:
+        keep = E[world + "/remembers"]["per_session"]
+        wipe = E[world + "/control-wiped"]["per_session"]
+        x = list(range(1, len(keep) + 1))
+        ax.plot(x, wipe, color="#9aa3ab", lw=2.0, marker="o", ms=4, zorder=3,
+                label="forgets between runs (control)")
+        ax.plot(x, keep, color="#2a78d6", lw=2.6, marker="o", ms=4.6, zorder=4,
+                label="keeps its model of you")
+        ax.set_title(title, fontsize=10.5, color=INK, pad=8)
+        ax.set_xlabel("session")
+        ax.grid(axis="y", color=GRID, lw=0.8, zorder=0); ax.set_axisbelow(True)
+        for sp in ("top", "right"): ax.spines[sp].set_visible(False)
+        d = E[world + "/remembers"]["change_pct"]
+        ax.annotate(f"{d:+.0f}%", xy=(x[-1], keep[-1]), xytext=(-4, 10 if d > 0 else -16),
+                    textcoords="offset points", ha="right", fontsize=12, fontweight="bold",
+                    color="#2a78d6")
+    axes[0].set_ylabel("captures per 1000 moves")
+    axes[0].legend(frameon=False, fontsize=9, loc="lower left")
+    fig.suptitle("Does it get better at catching you the more you play?",
+                 fontsize=12.5, fontweight="bold", color=INK, x=0.012, ha="left", y=0.99)
+    fig.text(0.012, 0.915,
+             "Only when the building stays put. Carrying a model into a rewired "
+             "facility is worse than forgetting.",
+             fontsize=9.5, color=INK2, ha="left")
+    fig.tight_layout(rect=[0, 0, 1, 0.88])
+    fig.savefig(out, dpi=200); plt.close(fig)
+
+
 if __name__ == "__main__":
     out = ROOT / "out"; out.mkdir(exist_ok=True)
     fig_accuracy(out / "fig_accuracy.png")
@@ -252,4 +289,5 @@ if __name__ == "__main__":
     fig_localisation(out / "fig_localisation.png")
     fig_counterplay(out / "fig_counterplay.png")
     fig_training(out / "fig_training.png")
+    fig_sessions(out / "fig_sessions.png")
     print("figures written:", *[p.name for p in sorted(out.glob("*.png"))])
