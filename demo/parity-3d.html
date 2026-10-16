@@ -1728,7 +1728,7 @@ function simulate(dt){
   t += dt;
   if(botHook) botHook(dt);
 
-  const frozen = (mode !== "play") || dead || won;   // reading or writing: you stop, the clock does not
+  const frozen = (mode !== "play") || dead || won || !started();   // reading or writing: you stop, the clock does not
   const turn = 1.9 * dt;
   if(!frozen) edgeTurn(dt);
   if(!frozen && keys.ArrowLeft)  cam.yaw += turn;
@@ -1774,6 +1774,11 @@ function simulate(dt){
   torchLevel += (flick - torchLevel) * Math.min(1, dt * 18);
   // and the picture starts to slip when it is near: a little next door, badly in the room
   glitch += ((hunted ? 1 : hopsNow <= 1 ? 0.3 : 0) - glitch) * Math.min(1, dt * 5);
+
+  // The world used to tick behind the title screen: the clock ran, the antagonist
+  // searched, and it could reach you before you had clicked anything. The scene
+  // still renders and the lights still breathe -- nothing in it moves.
+  if(!started()) return bobY;
 
   huntStep(dt);
   if(hunted) doorsOpen = true;          // you are never sealed in with it
