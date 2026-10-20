@@ -128,9 +128,9 @@ s.addText("PARITY", { placeholder: "title" });
 s.addText("An adaptive horror game driven by online player-trajectory prediction",
   { placeholder: "body" });
 s.addText([
-  { text: "Shivam Kumar Arya  ·  Parth Jaiswal", options: { bold: true, color: PAPER, breakLine: true } },
-  { text: "B.Tech Computer Science and Engineering (AI & Robotics)  ·  BCSE497J", options: { breakLine: true } },
-  { text: "Vellore Institute of Technology", options: {} },
+  { text: "Shivam Kumar Arya (23BRS1357)  \u00B7  Parth Jaiswal (23BRS1323)", options: { bold: true, color: PAPER, breakLine: true } },
+  { text: "Team 53  \u00B7  Guide: Prakash B  \u00B7  Panel 88  \u00B7  BCSE497J", options: { breakLine: true } },
+  { text: "B.Tech Computer Science and Engineering (AI & Robotics)  \u00B7  Vellore Institute of Technology", options: {} },
 ], { placeholder: "meta" });
 s.addShape(pres.shapes.RECTANGLE, { x: 0.95, y: 2.15, w: 1.1, h: 0.035, fill: { color: AMBER }, line: { color: AMBER } });
 s.addText("0 1 0 0 1 1 0 1", { x: 0.95, y: 5.45, w: 6, h: 0.35, fontSize: 13, color: MUTED,
@@ -404,6 +404,38 @@ s.addText([
   { text: " regenerates from one command", options: { color: MUTED } },
 ], { x: 1.0, y: 5.62, w: 11.2, h: 0.55, fontSize: 13.5, isTextBox: true, margin: 0 });
 s.addNotes("The verification line matters more than the feature list. Anything in this deck can be reproduced with python3 model/evaluate.py.");
+
+// 17b ------------------------------------------------- who did what
+s = pres.addSlide({ masterName: "CONTENT", sectionTitle: "The build" });
+s.addText("Who did what", { placeholder: "title" });
+s.addText("The project guidelines ask the candidate to distinguish what was added from what was already there. This mirrors Table 1.4 of the report.", { placeholder: "body" });
+const who = [
+  ["Baseline \u2014 Shivam Kumar Arya", "2A78D6", [
+    "Variable-order predictor, order-1 and uniform baselines",
+    "Door sensors and the forward belief filter",
+    "Director, counter-moves and the fairness rules",
+    "Facility graph, scripted players, evaluation, invariant tests",
+    "Door clock, notebook, register, codebooks, hunting, audio, step mode",
+  ]],
+  ["This work \u2014 Parth Jaiswal", "B2561F", [
+    "A new facility every run: seeded doors, roles, codes, keywords",
+    "The MIMIC antagonist and its row-tearing",
+    "Mouse look without pointer capture",
+    "Material system, weathered surfaces, emergency lighting, grain",
+    "Props, the live uplink screen and the codebook monitor",
+    "Watch mode, recording mode and the recorder",
+  ]],
+];
+who.forEach(([h, col, items], i) => {
+  const x = 0.64 + i * 6.1;
+  card(s, { x, y: 1.98, w: 5.8, h: 4.25, fill: "FFFFFF", line: "DED7C6" });
+  s.addText(h, { x: x + 0.3, y: 2.2, w: 5.2, h: 0.36, fontSize: 15, bold: true, color: col, isTextBox: true, margin: 0 });
+  s.addText(items.map((t, j) => ({ text: t, options: { bullet: true, breakLine: j < items.length - 1 } })),
+    { x: x + 0.3, y: 2.68, w: 5.25, h: 3.3, fontSize: 12, color: INK, isTextBox: true, margin: 0, paraSpaceAfter: 7, lineSpacing: 16 });
+});
+s.addText("E13, the cross-session measurement in \u00A77.8, was added to the baseline evaluation suite after the fork.",
+  { x: 0.64, y: 6.34, w: 11.96, h: 0.35, fontSize: 11.5, italic: true, color: MUTED, isTextBox: true, margin: 0 });
+s.addNotes("Panels mark attribution. Name which half is yours in one sentence and move on \u2014 do not read the lists aloud.");
 
 // 18 ------------------------------------------------------ limitations
 s = pres.addSlide({ masterName: "CONTENT", sectionTitle: "The build" });
