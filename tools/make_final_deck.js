@@ -399,7 +399,7 @@ s.addText([
   { text: "9 / 9 invariants hold", options: { bold: true, color: INK } },
   { text: "  over 25 generated facilities   ·   ", options: { color: MUTED } },
   { text: "automated player", options: { bold: true, color: INK } },
-  { text: " completes the objective on every seed   ·   ", options: { color: MUTED } },
+  { text: " completes the objective on all 12 seeds tested   \u00B7   ", options: { color: MUTED } },
   { text: "every figure", options: { bold: true, color: INK } },
   { text: " regenerates from one command", options: { color: MUTED } },
 ], { x: 1.0, y: 5.62, w: 11.2, h: 0.55, fontSize: 13.5, isTextBox: true, margin: 0 });
