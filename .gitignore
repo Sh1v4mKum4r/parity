@@ -5,3 +5,5 @@ __pycache__/
 
 # LibreOffice lock files (they embed your username and hostname)
 .~lock.*#
+node_modules/
+package-lock.json
